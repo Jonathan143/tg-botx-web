@@ -1,17 +1,17 @@
 import {
-  BaseEdge,
   Background,
+  BaseEdge,
   Controls,
+  type Edge,
   EdgeLabelRenderer,
+  type EdgeProps,
+  getBezierPath,
   Handle,
+  type Node,
+  type NodeProps,
+  type OnNodeDrag,
   Position,
   ReactFlow,
-  getBezierPath,
-  type Edge,
-  type EdgeProps,
-  type Node,
-  type OnNodeDrag,
-  type NodeProps,
 } from "@xyflow/react";
 import {
   CheckCircle2,
@@ -20,13 +20,13 @@ import {
   CircleAlert,
   Flag,
   GripVertical,
+  type LucideIcon,
   MessageCircle,
   MousePointerClick,
-  Plus,
   Play,
+  Plus,
   Send,
   Trash2,
-  type LucideIcon,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -632,7 +632,6 @@ export function TaskWorkflowEditor({
   readOnly?: boolean;
 }) {
   const isMobile = useIsMobile();
-  const direction = isMobile ? "vertical" : "horizontal";
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const move = useCallback(
     (index: number, directionValue: -1 | 1) => {

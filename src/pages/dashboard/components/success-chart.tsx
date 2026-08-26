@@ -7,6 +7,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { formatChartLabel, type DashboardRange } from "@/lib/format";
 
 const chartConfig = {
   success: { label: "成功", color: "var(--chart-2)" },
@@ -15,22 +16,41 @@ const chartConfig = {
 
 export function SuccessChart({
   data,
+  range,
 }: {
   data: Array<{ label: string; success: number; failed: number }>;
+  range: DashboardRange;
 }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>执行趋势</CardTitle>
-        <CardDescription>当前时间范围内成功与失败的任务执行次数。</CardDescription>
+        <CardDescription>
+          当前时间范围内成功与失败的任务执行次数，时间按本地时区显示。
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="h-72 w-full">
           <AreaChart data={data} accessibilityLayer>
             <CartesianGrid vertical={false} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+            <XAxis
+              dataKey="label"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              minTickGap={40}
+              tickFormatter={(value) => formatChartLabel(String(value), range)}
+            />
             <YAxis width={32} tickLine={false} axisLine={false} allowDecimals={false} />
-            <ChartTooltip content={<ChartTooltipContent />} />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(_, payload) =>
+                    formatChartLabel(String(payload[0]?.payload?.label ?? ""), range)
+                  }
+                />
+              }
+            />
             <Area
               dataKey="success"
               type="monotone"

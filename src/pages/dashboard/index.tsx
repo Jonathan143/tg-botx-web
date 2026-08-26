@@ -7,7 +7,7 @@ import { ErrorState, PageSkeleton } from "@/components/resource-state";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { apiRequest } from "@/lib/api/client";
 import type { DashboardResponse } from "@/lib/api/types";
-import { formatPercent } from "@/lib/format";
+import { formatPercent, type DashboardRange } from "@/lib/format";
 import { HealthPanel } from "./components/health-panel";
 import { MetricCard } from "./components/metric-card";
 import { RecentRuns } from "./components/recent-runs";
@@ -15,7 +15,7 @@ import { SuccessChart } from "./components/success-chart";
 import { UpcomingTasks } from "./components/upcoming-tasks";
 
 export default function DashboardPage() {
-  const [range, setRange] = useState("24h");
+  const [range, setRange] = useState<DashboardRange>("24h");
   const query = useQuery({
     queryKey: ["dashboard", range],
     queryFn: () => apiRequest<DashboardResponse>(`/api/dashboard?range=${range}`),
@@ -30,7 +30,12 @@ export default function DashboardPage() {
         actions={
           <ToggleGroup
             value={[range]}
-            onValueChange={(values) => values[0] && setRange(values[0])}
+            onValueChange={(values) => {
+              const nextRange = values[0];
+              if (nextRange === "24h" || nextRange === "7d" || nextRange === "30d") {
+                setRange(nextRange);
+              }
+            }}
             aria-label="统计时间范围"
           >
             <ToggleGroupItem value="24h">24 小时</ToggleGroupItem>
@@ -72,7 +77,7 @@ export default function DashboardPage() {
             />
           </div>
           <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-            <SuccessChart data={query.data.statusBreakdown} />
+            <SuccessChart data={query.data.statusBreakdown} range={range} />
             <HealthPanel health={query.data.health} />
           </div>
           <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">

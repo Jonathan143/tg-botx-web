@@ -5,6 +5,8 @@ import { apiRequest, jsonBody, onAuthRequired, setCsrfToken } from "@/lib/api/cl
 import { encryptSensitiveValue } from "@/lib/api/crypto";
 import type { SessionResponse } from "@/lib/api/types";
 
+const sessionQueryKey = ["auth", "session"] as const;
+
 type AuthContextValue = {
   status: "loading" | "authenticated" | "unauthenticated";
   sessionExpiresAt: string | null;
@@ -16,8 +18,9 @@ const AuthContext = React.createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
+  const [forcedUnauthenticated, setForcedUnauthenticated] = React.useState(false);
   const sessionQuery = useQuery({
-    queryKey: ["auth", "session"],
+    queryKey: sessionQueryKey,
     queryFn: () => apiRequest<SessionResponse>("/api/auth/session"),
     retry: false,
     staleTime: 60_000,
@@ -32,7 +35,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(
     () =>
       onAuthRequired(() => {
-        queryClient.setQueryData(["auth", "session"], undefined);
+        // Keep an explicit unauthenticated value so placeholderData cannot
+        // resurrect the previous authenticated session while routing to /unlock.
+        setForcedUnauthenticated(true);
+        queryClient.setQueryData<SessionResponse | null>(sessionQueryKey, null);
       }),
     [queryClient],
   );
@@ -44,21 +50,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         body: jsonBody(encrypted),
       });
+      setForcedUnauthenticated(false);
       setCsrfToken(session.csrfToken);
-      queryClient.setQueryData(["auth", "session"], session);
+      queryClient.setQueryData(sessionQueryKey, session);
     },
     [queryClient],
   );
 
   const logout = React.useCallback(async () => {
     await apiRequest<void>("/api/auth/logout", { method: "POST", body: jsonBody({}) });
+    setForcedUnauthenticated(true);
     setCsrfToken(null);
-    queryClient.clear();
+    // Cancel in-flight requests before clearing their cached data. Otherwise
+    // a late session response can restore authenticated state after logout.
+    await queryClient.cancelQueries();
+    // Keep the active session query mounted so its observer receives the
+    // unauthenticated update. Clearing the whole cache would destroy that
+    // observer and leave the provider rendering its previous result.
+    queryClient.removeQueries({
+      predicate: (query) => query.queryKey[0] !== sessionQueryKey[0],
+    });
+    // Seed the session observer with a fresh unauthenticated value. This also
+    // prevents keepPreviousData from restoring the previous authenticated one.
+    queryClient.setQueryData<SessionResponse | null>(sessionQueryKey, null);
   }, [queryClient]);
 
   const value = React.useMemo<AuthContextValue>(
     () => ({
-      status: sessionQuery.isPending
+      status: forcedUnauthenticated
+        ? "unauthenticated"
+        : sessionQuery.isPending
         ? "loading"
         : sessionQuery.data?.authenticated
           ? "authenticated"
@@ -67,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unlock,
       logout,
     }),
-    [sessionQuery.data, sessionQuery.isPending, unlock, logout],
+    [forcedUnauthenticated, sessionQuery.data, sessionQuery.isPending, unlock, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
