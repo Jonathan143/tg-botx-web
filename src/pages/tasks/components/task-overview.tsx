@@ -67,6 +67,7 @@ export function TaskOverview({ task }: { task: Task }) {
         <CardContent>
           <TaskWorkflowEditor
             steps={task.definition?.steps ?? []}
+            run={task.run}
             readOnly
             onChange={() => undefined}
           />

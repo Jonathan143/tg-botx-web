@@ -52,6 +52,20 @@ export type TaskDefinition = {
   notifyBotResponse?: boolean | null;
 };
 
+export type TaskStepStatus = {
+  index: number;
+  status: "pending" | "running" | "success" | "failed" | "skipped";
+  error?: string | null;
+};
+
+export type TaskRunProgress = {
+  id: string;
+  status: "running" | "success" | "failed" | "canceled" | "skipped";
+  attempt: number;
+  stepStatuses: TaskStepStatus[];
+  error?: string | null;
+};
+
 export type Task = {
   id: string;
   name: string;
@@ -66,6 +80,7 @@ export type Task = {
   nextRunAt: string | null;
   lastRunAt: string | null;
   lastStatus: string | null;
+  run?: TaskRunProgress | null;
   createdAt: string;
   updatedAt: string;
 };

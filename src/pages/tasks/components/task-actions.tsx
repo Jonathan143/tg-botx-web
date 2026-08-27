@@ -10,11 +10,22 @@ export function TaskActions({ task }: { task: Task }) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (action: string) =>
-      apiRequest(`/api/tasks/${task.id}/${action}`, { method: "POST", body: jsonBody({}) }),
-    onSuccess: (_, action) => {
-      queryClient.invalidateQueries({ queryKey: ["task", task.id] });
+      apiRequest<Task | { accepted: true; taskId: string }>(`/api/tasks/${task.id}/${action}`, {
+        method: "POST",
+        body: jsonBody({}),
+      }),
+    onSuccess: (result, action) => {
+      if ("running" in result) {
+        queryClient.setQueryData(["task", task.id], result);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["task", task.id] });
+      }
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast.add({ type: "success", title: action === "run" ? "任务已加入执行队列" : "任务已更新" });
+      toast.add({
+        type: "success",
+        title: action === "run" ? "任务已加入执行队列" : "任务已更新",
+        timeout: action === "run" ? 2_000 : 4_000,
+      });
     },
     onError: (error) => toast.add({ type: "error", title: "操作失败", description: error.message }),
   });

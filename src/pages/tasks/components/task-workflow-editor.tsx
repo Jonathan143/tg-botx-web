@@ -54,7 +54,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsMobile } from "@/hooks/use-mobile";
-import type { TaskRun } from "@/lib/api/types";
+import type { TaskRunProgress } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import "@xyflow/react/dist/style.css";
@@ -140,17 +140,14 @@ function runBadge(status?: string | null) {
   if (!status) return null;
   const variant =
     status === "success" ? "secondary" : status === "failed" ? "destructive" : "outline";
-  return (
-    <Badge variant={variant}>
-      {status === "running"
-        ? "运行中"
-        : status === "success"
-          ? "成功"
-          : status === "failed"
-            ? "失败"
-            : status}
-    </Badge>
-  );
+  const label = {
+    running: "运行中",
+    pending: "等待中",
+    success: "成功",
+    failed: "失败",
+    skipped: "已跳过",
+  }[status];
+  return <Badge variant={variant}>{label ?? status}</Badge>;
 }
 
 function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
@@ -188,6 +185,9 @@ function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
             <p className="truncate font-medium">{stepLabel(data.step)}</p>
           </div>
           <p className="mt-1 truncate text-xs text-muted-foreground">{stepSummary(data.step)}</p>
+          {data.error ? (
+            <p className="mt-1 line-clamp-2 text-xs text-destructive">{data.error}</p>
+          ) : null}
         </div>
       </div>
       {!data.readOnly ? (
@@ -627,12 +627,16 @@ export function TaskWorkflowEditor({
   readOnly = false,
 }: {
   steps: WorkflowStep[];
-  run?: TaskRun | null;
+  run?: TaskRunProgress | null;
   onChange: (steps: WorkflowStep[]) => void;
   readOnly?: boolean;
 }) {
   const isMobile = useIsMobile();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const stepStatusByIndex = useMemo(
+    () => new Map(run?.stepStatuses.map((item) => [item.index, item]) ?? []),
+    [run?.stepStatuses],
+  );
   const move = useCallback(
     (index: number, directionValue: -1 | 1) => {
       const nextIndex = index + directionValue;
@@ -668,27 +672,31 @@ export function TaskWorkflowEditor({
         data: { kind: "start" as const, label: "开始" },
         draggable: false,
       },
-      ...steps.map((step, index) => ({
-        id: `step-${index}`,
-        type: "workflow",
-        position: isMobile
-          ? { x: 40, y: (index + 1) * gap }
-          : { x: stepOffset + index * gap, y: 60 },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        data: {
-          index,
-          stepCount: steps.length,
-          step,
-          selected: selectedIndex === index,
-          runStatus: run?.status,
-          readOnly,
-          onSelect: setSelectedIndex,
-          onMove: move,
-          onDelete: remove,
-        },
-        draggable: !isMobile && !readOnly,
-      })),
+      ...steps.map((step, index) => {
+        const stepStatus = stepStatusByIndex.get(index);
+        return {
+          id: `step-${index}`,
+          type: "workflow" as const,
+          position: isMobile
+            ? { x: 40, y: (index + 1) * gap }
+            : { x: stepOffset + index * gap, y: 60 },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          data: {
+            index,
+            stepCount: steps.length,
+            step,
+            selected: selectedIndex === index,
+            runStatus: stepStatus?.status,
+            error: stepStatus?.error,
+            readOnly,
+            onSelect: setSelectedIndex,
+            onMove: move,
+            onDelete: remove,
+          },
+          draggable: !isMobile && !readOnly,
+        };
+      }),
       {
         id: "end",
         type: "display",
@@ -700,7 +708,7 @@ export function TaskWorkflowEditor({
         draggable: false,
       },
     ];
-  }, [isMobile, move, readOnly, remove, run?.status, selectedIndex, steps]);
+  }, [isMobile, move, readOnly, remove, selectedIndex, stepStatusByIndex, steps]);
   const edges = [
     { source: "start", target: steps.length > 0 ? "step-0" : "end", insertIndex: 0 },
     ...steps.slice(0, -1).map((_, index) => ({
@@ -762,27 +770,36 @@ export function TaskWorkflowEditor({
               开始
             </CardContent>
           </Card>
-          {steps.map((step, index) => (
-            <Card key={JSON.stringify(step)}>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-1.5 text-sm">
-                  <StepIcon step={step} className="size-4 shrink-0 text-primary" />
-                  步骤 {index + 1} · {stepLabel(step)}
-                </CardTitle>
-                <CardDescription>{stepSummary(step)}</CardDescription>
-              </CardHeader>
-              {!readOnly ? (
-                <CardContent>
-                  <StepFields
-                    step={step}
-                    onChange={(next) =>
-                      onChange(steps.map((item, itemIndex) => (itemIndex === index ? next : item)))
-                    }
-                  />
-                </CardContent>
-              ) : null}
-            </Card>
-          ))}
+          {steps.map((step, index) => {
+            const stepStatus = stepStatusByIndex.get(index);
+            return (
+              <Card key={JSON.stringify(step)}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-1.5 text-sm">
+                    <StepIcon step={step} className="size-4 shrink-0 text-primary" />
+                    步骤 {index + 1} · {stepLabel(step)}
+                    {runBadge(stepStatus?.status)}
+                  </CardTitle>
+                  <CardDescription>{stepSummary(step)}</CardDescription>
+                  {stepStatus?.error ? (
+                    <p className="text-xs text-destructive">{stepStatus.error}</p>
+                  ) : null}
+                </CardHeader>
+                {!readOnly ? (
+                  <CardContent>
+                    <StepFields
+                      step={step}
+                      onChange={(next) =>
+                        onChange(
+                          steps.map((item, itemIndex) => (itemIndex === index ? next : item)),
+                        )
+                      }
+                    />
+                  </CardContent>
+                ) : null}
+              </Card>
+            );
+          })}
           <Card>
             <CardContent className="flex items-center gap-2 py-3 text-sm font-medium text-muted-foreground">
               <Flag aria-hidden="true" />

@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
+import { useTaskEvents } from "@/hooks/use-task-events";
 import { apiRequest, jsonBody } from "@/lib/api/client";
 import type { Account, Paginated, Task, TaskDefinition } from "@/lib/api/types";
 import { TaskActions } from "./components/task-actions";
@@ -20,8 +21,8 @@ export default function TaskDetailPage() {
     queryKey: ["task", taskId],
     queryFn: () => apiRequest<Task>(`/api/tasks/${taskId}`),
     enabled: Boolean(taskId),
-    refetchInterval: 15_000,
   });
+  useTaskEvents(taskQuery.data?.id === taskId && taskQuery.data?.running ? taskId : undefined);
   const accountsQuery = useQuery({
     queryKey: ["accounts"],
     queryFn: () => apiRequest<Paginated<Account> | Account[]>("/api/accounts"),
