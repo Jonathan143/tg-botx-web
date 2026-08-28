@@ -56,6 +56,7 @@ export type TaskStepStatus = {
   index: number;
   status: "pending" | "running" | "success" | "failed" | "skipped";
   error?: string | null;
+  botResponse?: string | null;
 };
 
 export type TaskRunProgress = {
@@ -64,6 +65,14 @@ export type TaskRunProgress = {
   attempt: number;
   stepStatuses: TaskStepStatus[];
   error?: string | null;
+  logs?: TaskRunLog[];
+};
+
+export type TaskRunLog = {
+  timestamp: string | null;
+  level: string | null;
+  message: string;
+  stepIndex?: number | null;
 };
 
 export type Task = {
@@ -83,6 +92,15 @@ export type Task = {
   run?: TaskRunProgress | null;
   createdAt: string;
   updatedAt: string;
+  latestWorkflowVersion?: number | null;
+  workflowVersions?: WorkflowVersionSummary[];
+};
+
+export type WorkflowVersionSummary = {
+  id: string;
+  version: number;
+  publishedAt: string;
+  releaseNote: string | null;
 };
 
 export type TaskRun = {
@@ -97,6 +115,12 @@ export type TaskRun = {
   finishedAt: string | null;
   attempts: number;
   error: string | null;
+  runKind?: "published" | "test" | string;
+  workflowVersion?: number | "main" | string | null;
+  workflowVersionId?: string | null;
+  workflow?: (Partial<TaskDefinition> & { steps: Array<Record<string, unknown>> }) | null;
+  workflowError?: string | null;
+  progress?: TaskRunProgress | null;
 };
 
 export type Account = {

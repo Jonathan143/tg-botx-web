@@ -26,8 +26,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { Account, TaskDefinition } from "@/lib/api/types";
 import { ApiError } from "@/lib/api/client";
+import type { Account, TaskDefinition } from "@/lib/api/types";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 
 const defaultDefinition: TaskDefinition = {
@@ -60,6 +60,8 @@ export function TaskForm({
   accountsError = false,
   submitLabel,
   isSubmitting,
+  onTest,
+  isTesting = false,
   onSubmit,
 }: {
   initialValue?: TaskDefinition;
@@ -68,6 +70,8 @@ export function TaskForm({
   accountsError?: boolean;
   submitLabel: string;
   isSubmitting: boolean;
+  onTest?: (definition: TaskDefinition) => Promise<void>;
+  isTesting?: boolean;
   onSubmit: (definition: TaskDefinition) => Promise<void>;
 }) {
   const initial = useMemo(() => initialValue ?? defaultDefinition, [initialValue]);
@@ -136,18 +140,25 @@ export function TaskForm({
     setMode(nextMode);
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const readDefinition = () => {
+    const next = mode === "yaml" ? (parse(yamlText) as TaskDefinition) : definition;
+    if (!next.name?.trim() || !next.account?.trim() || !next.target?.trim()) {
+      throw new Error("任务名称、账号和目标不能为空。");
+    }
+    if (!Array.isArray(next.steps) || next.steps.length === 0) {
+      throw new Error("至少需要配置一个执行步骤。");
+    }
+    return next;
+  };
+
+  const handleAction = async (
+    event: React.SyntheticEvent,
+    action: (next: TaskDefinition) => Promise<void>,
+  ) => {
     event.preventDefault();
     setError(null);
     try {
-      const next = mode === "yaml" ? (parse(yamlText) as TaskDefinition) : definition;
-      if (!next.name?.trim() || !next.account?.trim() || !next.target?.trim()) {
-        throw new Error("任务名称、账号和目标不能为空。");
-      }
-      if (!Array.isArray(next.steps) || next.steps.length === 0) {
-        throw new Error("至少需要配置一个执行步骤。");
-      }
-      await onSubmit(next);
+      await action(readDefinition());
     } catch (submissionError) {
       if (submissionError instanceof ApiError && Array.isArray(submissionError.details)) {
         const details = submissionError.details
@@ -164,6 +175,10 @@ export function TaskForm({
       }
     }
   };
+
+  const handleSubmit = (event: React.FormEvent) => handleAction(event, onSubmit);
+  const handleTest = (event: React.MouseEvent<HTMLButtonElement>) =>
+    onTest ? handleAction(event, onTest) : Promise.resolve();
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
@@ -439,14 +454,25 @@ export function TaskForm({
       </Tabs>
       {error ? (
         <Alert variant="destructive">
-          <AlertTitle>无法保存配置</AlertTitle>
+          <AlertTitle>配置操作失败</AlertTitle>
           <AlertDescription>
             <FieldError className="whitespace-pre-wrap">{error}</FieldError>
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="flex justify-end">
-        <Button type="submit" disabled={isSubmitting}>
+      <div className="flex justify-end gap-2">
+        {onTest ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isSubmitting || isTesting}
+            onClick={(event) => void handleTest(event)}
+          >
+            {isTesting ? <Spinner data-icon="inline-start" /> : null}
+            测试工作流
+          </Button>
+        ) : null}
+        <Button type="submit" disabled={isSubmitting || isTesting}>
           {isSubmitting ? <Spinner data-icon="inline-start" /> : null}
           {submitLabel}
         </Button>

@@ -54,7 +54,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsMobile } from "@/hooks/use-mobile";
-import type { TaskRunProgress } from "@/lib/api/types";
+import type { TaskRunLog, TaskRunProgress, TaskStepStatus } from "@/lib/api/types";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import "@xyflow/react/dist/style.css";
@@ -68,6 +69,7 @@ type WorkflowNodeData = {
   selected: boolean;
   runStatus?: string | null;
   error?: string | null;
+  botResponse?: string | null;
   readOnly?: boolean;
   onSelect: (index: number) => void;
   onMove: (index: number, direction: -1 | 1) => void;
@@ -187,6 +189,11 @@ function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
           <p className="mt-1 truncate text-xs text-muted-foreground">{stepSummary(data.step)}</p>
           {data.error ? (
             <p className="mt-1 line-clamp-2 text-xs text-destructive">{data.error}</p>
+          ) : null}
+          {data.botResponse !== undefined && data.botResponse !== null ? (
+            <p className="mt-1 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+              机器人回复：{data.botResponse}
+            </p>
           ) : null}
         </div>
       </div>
@@ -623,11 +630,13 @@ function StepFields({
 export function TaskWorkflowEditor({
   steps,
   run,
+  runLogs,
   onChange,
   readOnly = false,
 }: {
   steps: WorkflowStep[];
   run?: TaskRunProgress | null;
+  runLogs?: TaskRunLog[];
   onChange: (steps: WorkflowStep[]) => void;
   readOnly?: boolean;
 }) {
@@ -689,6 +698,7 @@ export function TaskWorkflowEditor({
             selected: selectedIndex === index,
             runStatus: stepStatus?.status,
             error: stepStatus?.error,
+            botResponse: stepStatus?.botResponse,
             readOnly,
             onSelect: setSelectedIndex,
             onMove: move,
@@ -772,8 +782,27 @@ export function TaskWorkflowEditor({
           </Card>
           {steps.map((step, index) => {
             const stepStatus = stepStatusByIndex.get(index);
+            const stepLogs = (runLogs ?? run?.logs ?? []).filter((log) => log.stepIndex === index);
             return (
-              <Card key={JSON.stringify(step)}>
+              <Card
+                key={JSON.stringify(step)}
+                className={
+                  readOnly ? "cursor-pointer transition-colors hover:bg-muted/40" : undefined
+                }
+                onClick={readOnly ? () => setSelectedIndex(index) : undefined}
+                onKeyDown={
+                  readOnly
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedIndex(index);
+                        }
+                      }
+                    : undefined
+                }
+                role={readOnly ? "button" : undefined}
+                tabIndex={readOnly ? 0 : undefined}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-1.5 text-sm">
                     <StepIcon step={step} className="size-4 shrink-0 text-primary" />
@@ -783,6 +812,18 @@ export function TaskWorkflowEditor({
                   <CardDescription>{stepSummary(step)}</CardDescription>
                   {stepStatus?.error ? (
                     <p className="text-xs text-destructive">{stepStatus.error}</p>
+                  ) : null}
+                  {stepStatus?.botResponse !== undefined && stepStatus.botResponse !== null ? (
+                    <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                      机器人回复：{stepStatus.botResponse}
+                    </p>
+                  ) : null}
+                  {stepLogs.length > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      {stepLogs.length} 条运行日志 · 点击查看
+                    </p>
+                  ) : readOnly ? (
+                    <p className="text-xs text-muted-foreground">点击查看节点详情</p>
                   ) : null}
                 </CardHeader>
                 {!readOnly ? (
@@ -811,7 +852,14 @@ export function TaskWorkflowEditor({
       <StepEditorSheet
         step={selectedIndex === null ? null : (steps[selectedIndex] ?? null)}
         index={selectedIndex ?? 0}
-        open={selectedIndex !== null && !isMobile && !readOnly}
+        open={selectedIndex !== null && (readOnly || !isMobile)}
+        readOnly={readOnly}
+        runStatus={selectedIndex === null ? undefined : stepStatusByIndex.get(selectedIndex)}
+        runLogs={
+          selectedIndex === null
+            ? []
+            : (runLogs ?? run?.logs ?? []).filter((log) => log.stepIndex === selectedIndex)
+        }
         onOpenChange={(open) => {
           if (!open) setSelectedIndex(null);
         }}
@@ -830,12 +878,18 @@ export function StepEditorSheet({
   open,
   onOpenChange,
   onChange,
+  readOnly = false,
+  runStatus,
+  runLogs = [],
 }: {
   step: WorkflowStep | null;
   index: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onChange: (step: WorkflowStep) => void;
+  readOnly?: boolean;
+  runStatus?: TaskStepStatus;
+  runLogs?: TaskRunLog[];
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -845,18 +899,73 @@ export function StepEditorSheet({
             {step ? <StepIcon step={step} className="size-4 shrink-0 text-primary" /> : null}
             步骤 {index + 1} · {step ? stepLabel(step) : ""}
           </SheetTitle>
-          <SheetDescription>编辑该节点的执行参数。保存任务前会经过后端校验。</SheetDescription>
+          <SheetDescription>
+            {readOnly
+              ? "查看该节点的执行状态和运行日志。"
+              : "编辑该节点的执行参数。保存任务前会经过后端校验。"}
+          </SheetDescription>
         </SheetHeader>
-        <div className="px-4 pb-4">
-          {step ? <StepFields step={step} onChange={onChange} /> : null}
+        <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4">
+          {readOnly ? (
+            <RunStepDetails status={runStatus} logs={runLogs} />
+          ) : step ? (
+            <StepFields step={step} onChange={onChange} />
+          ) : null}
         </div>
         <SheetFooter>
           <Button type="button" onClick={() => onOpenChange(false)}>
             <CheckCircle2 data-icon="inline-start" />
-            完成编辑
+            {readOnly ? "关闭" : "完成编辑"}
           </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function RunStepDetails({ status, logs }: { status?: TaskStepStatus; logs: TaskRunLog[] }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-1">
+        <span className="text-xs text-muted-foreground">节点状态</span>
+        <div>{runBadge(status?.status) ?? <Badge variant="outline">暂无状态</Badge>}</div>
+      </div>
+      {status?.error ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {status.error}
+        </div>
+      ) : null}
+      {status?.botResponse ? (
+        <div className="grid gap-1">
+          <span className="text-xs text-muted-foreground">机器人回复</span>
+          <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs">
+            {status.botResponse}
+          </pre>
+        </div>
+      ) : null}
+      <div className="grid gap-2">
+        <span className="text-xs text-muted-foreground">运行日志</span>
+        {logs.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+            暂无该节点日志
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border font-mono text-xs">
+            {logs.map((log) => (
+              <div
+                key={`${log.timestamp}-${log.level}-${log.message}`}
+                className="border-b px-3 py-2 last:border-b-0"
+              >
+                <div className="mb-1 flex gap-2 text-muted-foreground">
+                  <time dateTime={log.timestamp ?? undefined}>{formatDateTime(log.timestamp)}</time>
+                  <span>{log.level ?? "INFO"}</span>
+                </div>
+                <p className="whitespace-pre-wrap break-words">{log.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

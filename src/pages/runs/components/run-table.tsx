@@ -22,6 +22,7 @@ export function RunTable({ runs }: { runs: TaskRun[] }) {
         <TableHeader>
           <TableRow>
             <TableHead>任务</TableHead>
+            <TableHead>工作流版本</TableHead>
             <TableHead>状态</TableHead>
             <TableHead className="hidden md:table-cell">开始时间</TableHead>
             <TableHead className="hidden lg:table-cell">耗时</TableHead>
@@ -38,6 +39,13 @@ export function RunTable({ runs }: { runs: TaskRun[] }) {
                 {run.error ? (
                   <p className="mt-1 max-w-sm truncate text-xs text-destructive">{run.error}</p>
                 ) : null}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {run.runKind === "test"
+                  ? "测试（草稿）"
+                  : run.workflowVersion
+                    ? `v${run.workflowVersion}`
+                    : "—"}
               </TableCell>
               <TableCell>
                 <StatusBadge status={run.status} />

@@ -59,9 +59,9 @@ export function TaskOverview({ task }: { task: Task }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>执行工作流预览</CardTitle>
+          <CardTitle>main 草稿工作流预览</CardTitle>
           <CardDescription>
-            按当前配置展示实际的串行执行顺序，不会触发 Telegram 操作。
+            这里展示可编辑的 main 草稿；正式运行使用最近发布的版本，不会触发 Telegram 操作。
           </CardDescription>
         </CardHeader>
         <CardContent>
