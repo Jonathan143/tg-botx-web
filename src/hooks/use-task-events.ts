@@ -5,15 +5,19 @@ import { toast } from "@/components/ui/toast";
 import type { Task } from "@/lib/api/types";
 
 function notifyRunFinished(task: Task) {
-  if (task.lastStatus === "success") {
+  // Test runs intentionally leave the task's formal `lastStatus` unchanged.
+  // Their terminal status is exposed through the current run progress instead.
+  const status = task.run?.status ?? task.lastStatus;
+
+  if (status === "success") {
     toast.add({ type: "success", title: "任务执行成功", timeout: 4_000 });
     return;
   }
-  if (task.lastStatus === "canceled") {
+  if (status === "canceled") {
     toast.add({ type: "warning", title: "任务执行已取消", timeout: 4_000 });
     return;
   }
-  if (task.lastStatus === "skipped") {
+  if (status === "skipped") {
     toast.add({ type: "warning", title: "任务执行已跳过", timeout: 4_000 });
     return;
   }

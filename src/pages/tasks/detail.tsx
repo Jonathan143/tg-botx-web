@@ -154,11 +154,14 @@ export default function TaskDetailPage() {
                         retry: { maxAttempts: 3, backoffSeconds: [30, 60, 120] },
                         steps: [],
                         notifications: { failure: true, success: false },
+                        logBotResponse: false,
+                        notifyBotResponse: false,
                       } satisfies TaskDefinition)
                     }
                     submitLabel="保存配置"
                     isSubmitting={updateMutation.isPending}
                     isTesting={testMutation.isPending}
+                    run={taskQuery.data.run}
                     onTest={async (definition) => {
                       await testMutation.mutateAsync(definition);
                     }}

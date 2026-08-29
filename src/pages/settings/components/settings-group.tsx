@@ -8,6 +8,8 @@ const labelMap: Record<string, string> = {
   database: "数据库类型",
   databaseUrl: "数据库连接",
   timezone: "默认时区",
+  notificationTimezone: "通知时间时区",
+  notificationConfigured: "机器人通知",
   sessionDays: "会话有效期（天）",
   transportKeyRotationHours: "传输密钥轮换（小时）",
   logLevel: "日志级别",

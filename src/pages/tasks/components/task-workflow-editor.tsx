@@ -132,8 +132,21 @@ const stepSummary = (step: WorkflowStep) => {
       : "等待任意新消息";
   }
   if (step.type === "click_button") {
-    const target = step.text ?? step.text_contains ?? step.callback_data;
-    return target ? `定位 ${String(target)}` : "待填写按钮定位条件";
+    const callback = step.callback_data ?? step.callbackData;
+    if (callback !== undefined) {
+      return callback ? `定位 ${String(callback)}` : "待填写按钮定位条件";
+    }
+    const textContains = step.text_contains ?? step.textContains;
+    if (textContains !== undefined) {
+      return textContains ? `定位 ${String(textContains)}` : "待填写按钮定位条件";
+    }
+    if (step.text !== undefined) {
+      return step.text ? `定位 ${String(step.text)}` : "待填写按钮定位条件";
+    }
+    if (step.row !== undefined || step.column !== undefined) {
+      return `定位 行 ${String(step.row ?? "?")} · 列 ${String(step.column ?? "?")}`;
+    }
+    return "待填写按钮定位条件";
   }
   return "请切换到 YAML 高级模式编辑";
 };
@@ -379,6 +392,148 @@ function makeStep(type: string): WorkflowStep {
   return { type };
 }
 
+const BUTTON_FIELD_ALIASES: Record<string, string> = {
+  text_contains: "textContains",
+  callback_data: "callbackData",
+};
+
+function updateButtonField(
+  step: WorkflowStep,
+  onChange: (step: WorkflowStep) => void,
+  field: "text" | "text_contains" | "callback_data" | "row" | "column",
+  value: unknown,
+) {
+  const next = { ...step };
+  const alias = BUTTON_FIELD_ALIASES[field];
+  if (alias) delete next[alias];
+  if (value === undefined) delete next[field];
+  else next[field] = value;
+  onChange(next);
+}
+
+type MatcherMode = "contains" | "exact" | "regex";
+
+const MATCHER_MODES: Array<{ value: MatcherMode; label: string }> = [
+  { value: "contains", label: "包含" },
+  { value: "exact", label: "精确" },
+  { value: "regex", label: "正则" },
+];
+
+function readMatcher(matcher: unknown): { values: string[]; mode: MatcherMode } {
+  const items = Array.isArray(matcher) ? matcher : [matcher];
+  const firstRule = items.find(
+    (item): item is { mode?: unknown; value?: unknown } =>
+      Boolean(item) && typeof item === "object",
+  );
+  const mode = MATCHER_MODES.some((item) => item.value === firstRule?.mode)
+    ? (firstRule?.mode as MatcherMode)
+    : "contains";
+  const values = items.map((item) =>
+    item && typeof item === "object"
+      ? String((item as { value?: unknown }).value ?? "")
+      : String(item ?? ""),
+  );
+  return { values: values.length > 0 ? values : [""], mode };
+}
+
+function MatcherField({
+  id,
+  label,
+  description,
+  placeholder,
+  matcher,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  placeholder: string;
+  matcher: unknown;
+  onChange: (matcher: unknown) => void;
+}) {
+  const parsedMatcher = readMatcher(matcher);
+  const [modeOverride, setModeOverride] = useState<MatcherMode | null>(null);
+  const mode = matcher == null ? (modeOverride ?? parsedMatcher.mode) : parsedMatcher.mode;
+  const { values } = parsedMatcher;
+  const updateMatcher = (nextValues: string[], nextMode: MatcherMode) => {
+    const cleanValues = nextValues.filter((value) => value.length > 0);
+    if (cleanValues.length === 0) {
+      onChange(undefined);
+      return;
+    }
+    if (cleanValues.length === 1 && nextMode === "contains") {
+      onChange(cleanValues[0]);
+      return;
+    }
+    const rules = cleanValues.map((value) => ({ mode: nextMode, value }));
+    onChange(rules.length === 1 ? rules[0] : rules);
+  };
+
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      <ToggleGroup
+        value={[mode]}
+        onValueChange={(nextValues) => {
+          const nextMode = nextValues[0] as MatcherMode | undefined;
+          if (nextMode && MATCHER_MODES.some((item) => item.value === nextMode)) {
+            setModeOverride(nextMode);
+            updateMatcher(values, nextMode);
+          }
+        }}
+      >
+        {MATCHER_MODES.map((item) => (
+          <ToggleGroupItem key={item.value} value={item.value}>
+            {item.label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      <div className="flex flex-col gap-2">
+        {values.map((value, index) => (
+          <div className="flex gap-2" key={`${id}-${mode}-${value}`}>
+            <Input
+              id={`${id}-${index}`}
+              aria-label={`${label} ${index + 1}`}
+              value={value}
+              onChange={(event) => {
+                const nextValues = [...values];
+                nextValues[index] = event.target.value;
+                updateMatcher(nextValues, mode);
+              }}
+              placeholder={placeholder}
+            />
+            {values.length > 1 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  updateMatcher(
+                    values.filter((_, itemIndex) => itemIndex !== index),
+                    mode,
+                  )
+                }
+              >
+                移除
+              </Button>
+            ) : null}
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!values.some(Boolean)}
+          onClick={() => onChange([...values.filter(Boolean), { mode, value: "" }])}
+        >
+          添加 OR 条件
+        </Button>
+      </div>
+      <FieldDescription>{description}</FieldDescription>
+    </Field>
+  );
+}
+
 function StepFields({
   step,
   onChange,
@@ -402,33 +557,6 @@ function StepFields({
     );
   }
   if (step.type === "wait_message") {
-    const matcher = step.success;
-    const matcherValues = Array.isArray(matcher)
-      ? matcher.map((item) =>
-          item && typeof item === "object"
-            ? String((item as { value?: unknown }).value ?? "")
-            : String(item ?? ""),
-        )
-      : [
-          matcher && typeof matcher === "object"
-            ? String((matcher as { value?: unknown }).value ?? "")
-            : String(matcher ?? ""),
-        ];
-    const matcherMode =
-      matcher &&
-      typeof matcher === "object" &&
-      !Array.isArray(matcher) &&
-      typeof (matcher as { mode?: unknown }).mode === "string"
-        ? String((matcher as { mode: string }).mode)
-        : "contains";
-    const updateMatcher = (values: string[], mode: string) => {
-      const cleanValues = values.filter((value) => value.length > 0);
-      if (cleanValues.length === 0) return update({ success: undefined });
-      if (cleanValues.length === 1 && mode === "contains")
-        return update({ success: cleanValues[0] });
-      const rules = cleanValues.map((value) => ({ mode, value }));
-      return update({ success: rules.length === 1 ? rules[0] : rules });
-    };
     return (
       <FieldGroup>
         <Field>
@@ -441,71 +569,22 @@ function StepFields({
             onChange={(event) => update({ timeout_seconds: Number(event.target.value) || 60 })}
           />
         </Field>
-        <Field>
-          <FieldLabel>成功匹配规则</FieldLabel>
-          <ToggleGroup
-            value={[matcherMode]}
-            onValueChange={(values) => values[0] && updateMatcher(matcherValues, values[0])}
-          >
-            <ToggleGroupItem value="contains">包含</ToggleGroupItem>
-            <ToggleGroupItem value="exact">精确</ToggleGroupItem>
-            <ToggleGroupItem value="regex">正则</ToggleGroupItem>
-          </ToggleGroup>
-          <div className="flex flex-col gap-2">
-            {matcherValues.map((value, index) => (
-              <div className="flex gap-2" key={`${matcherMode}-${value}`}>
-                <Input
-                  aria-label={`匹配规则 ${index + 1}`}
-                  value={value}
-                  onChange={(event) => {
-                    const next = [...matcherValues];
-                    next[index] = event.target.value;
-                    updateMatcher(next, matcherMode);
-                  }}
-                  placeholder="留空表示任意新消息"
-                />
-                {matcherValues.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      updateMatcher(
-                        matcherValues.filter((_, itemIndex) => itemIndex !== index),
-                        matcherMode,
-                      )
-                    }
-                  >
-                    移除
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                update({
-                  success: [...matcherValues.filter(Boolean), { mode: matcherMode, value: "" }],
-                })
-              }
-            >
-              添加 OR 条件
-            </Button>
-          </div>
-          <FieldDescription>
-            支持包含、精确、正则和多个 OR 条件；留空表示任意新消息。
-          </FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="step-failure">失败条件（可选）</FieldLabel>
-          <Input
-            id="step-failure"
-            value={typeof step.failure === "string" ? step.failure : ""}
-            onChange={(event) => update({ failure: event.target.value || undefined })}
-          />
-        </Field>
+        <MatcherField
+          id="step-success"
+          label="成功匹配规则"
+          description="支持包含、精确、正则和多个 OR 条件；留空表示任意新消息。"
+          placeholder="留空表示任意新消息"
+          matcher={step.success}
+          onChange={(success) => update({ success })}
+        />
+        <MatcherField
+          id="step-failure"
+          label="失败条件（可选）"
+          description="支持包含、精确、正则和多个 OR 条件；留空表示不设置失败条件。"
+          placeholder="留空表示不设置"
+          matcher={step.failure}
+          onChange={(failure) => update({ failure })}
+        />
       </FieldGroup>
     );
   }
@@ -513,7 +592,9 @@ function StepFields({
     const buttonMode =
       step.callback_data !== undefined
         ? "callback"
-        : step.text_contains !== undefined
+        : step.callbackData !== undefined
+          ? "callback"
+          : step.text_contains !== undefined || step.textContains !== undefined
           ? "contains"
           : step.text !== undefined
             ? "exact"
@@ -522,7 +603,9 @@ function StepFields({
       const {
         text: _text,
         text_contains: _textContains,
+        textContains: _textContainsAlias,
         callback_data: _callbackData,
+        callbackData: _callbackDataAlias,
         row: _row,
         column: _column,
         ...rest
@@ -567,7 +650,9 @@ function StepFields({
             <Input
               id="button-text"
               value={typeof step.text === "string" ? step.text : ""}
-              onChange={(event) => update({ text: event.target.value || undefined })}
+              onChange={(event) =>
+                updateButtonField(step, onChange, "text", event.target.value || undefined)
+              }
               placeholder="例如：每日签到"
             />
             <FieldDescription>优先精确匹配；没有精确结果时后端允许唯一子串匹配。</FieldDescription>
@@ -578,8 +663,16 @@ function StepFields({
             <FieldLabel htmlFor="button-contains">按钮文字</FieldLabel>
             <Input
               id="button-contains"
-              value={typeof step.text_contains === "string" ? step.text_contains : ""}
-              onChange={(event) => update({ text_contains: event.target.value || undefined })}
+              value={
+                typeof step.text_contains === "string"
+                  ? step.text_contains
+                  : typeof step.textContains === "string"
+                    ? step.textContains
+                    : ""
+              }
+              onChange={(event) =>
+                updateButtonField(step, onChange, "text_contains", event.target.value || undefined)
+              }
               placeholder="例如：签到"
             />
             <FieldDescription>按钮文字只要包含该内容即可。</FieldDescription>
@@ -590,8 +683,16 @@ function StepFields({
             <FieldLabel htmlFor="button-callback">Callback data（回调数据）</FieldLabel>
             <Input
               id="button-callback"
-              value={typeof step.callback_data === "string" ? step.callback_data : ""}
-              onChange={(event) => update({ callback_data: event.target.value || undefined })}
+              value={
+                typeof step.callback_data === "string"
+                  ? step.callback_data
+                  : typeof step.callbackData === "string"
+                    ? step.callbackData
+                    : ""
+              }
+              onChange={(event) =>
+                updateButtonField(step, onChange, "callback_data", event.target.value || undefined)
+              }
               placeholder="例如：checkin_today"
             />
           </Field>

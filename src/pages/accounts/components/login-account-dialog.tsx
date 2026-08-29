@@ -32,9 +32,9 @@ export function LoginAccountDialog({ onComplete }: { onComplete: () => void }) {
   const [qrImage, setQrImage] = useState<string | null>(null);
 
   const isPhoneInputStage =
-    flow?.stage === "phone_required" ||
-    flow?.stage === "code_pending" ||
-    flow?.stage === "password_pending";
+    flow?.method === "phone" && (flow.stage === "phone_required" || flow.stage === "code_pending");
+  const isPasswordInputStage = flow?.stage === "password_pending";
+  const isInputStage = isPhoneInputStage || isPasswordInputStage;
 
   useEffect(() => {
     if (!flow?.qrUrl) {
@@ -53,10 +53,21 @@ export function LoginAccountDialog({ onComplete }: { onComplete: () => void }) {
   }, [flow?.qrUrl]);
 
   useEffect(() => {
-    if (!open || !flow || flow.stage === "completed" || flow.stage === "failed") return;
+    // Password input is a user-interaction stage. Stop polling while the user
+    // enters the password so a stale GET response cannot race with submit.
+    if (
+      !open ||
+      !flow ||
+      flow.stage === "completed" ||
+      flow.stage === "failed" ||
+      flow.stage === "password_pending"
+    )
+      return;
+    let active = true;
     const timer = window.setInterval(async () => {
       try {
         const next = await apiRequest<LoginFlow>(`/api/accounts/login-flows/${flow.flowId}`);
+        if (!active) return;
         setFlow(next);
         if (next.stage === "completed") {
           toast.add({ type: "success", title: "Telegram 账号登录成功" });
@@ -67,7 +78,10 @@ export function LoginAccountDialog({ onComplete }: { onComplete: () => void }) {
         window.clearInterval(timer);
       }
     }, 2_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [flow, onComplete, open]);
 
   const startFlow = async () => {
@@ -191,21 +205,22 @@ export function LoginAccountDialog({ onComplete }: { onComplete: () => void }) {
             </p>
           </div>
         ) : null}
-        {flow && flow.method === "phone" && isPhoneInputStage ? (
+        {flow && isInputStage ? (
           <Field data-invalid={Boolean(error)}>
             <FieldLabel htmlFor="login-value">
-              {flow.stage === "phone_required"
-                ? "手机号（含国家区号）"
-                : flow.stage === "password_pending"
-                  ? "2FA 密码"
+              {isPasswordInputStage
+                ? "2FA 密码"
+                : flow.stage === "phone_required"
+                  ? "手机号（含国家区号）"
                   : "Telegram 验证码"}
             </FieldLabel>
             <Input
               id="login-value"
-              type={flow.stage === "password_pending" ? "password" : "text"}
+              type={isPasswordInputStage ? "password" : "text"}
               value={value}
               onChange={(event) => setValue(event.target.value)}
               autoComplete="off"
+              autoFocus={isPasswordInputStage}
               aria-invalid={Boolean(error)}
             />
             <FieldDescription>该值不会写入日志或浏览器存储。</FieldDescription>
@@ -218,9 +233,10 @@ export function LoginAccountDialog({ onComplete }: { onComplete: () => void }) {
             <Button onClick={startFlow} disabled={!accountName.trim() || isPending}>
               {isPending ? <Spinner data-icon="inline-start" /> : null}开始登录
             </Button>
-          ) : flow.method === "phone" && isPhoneInputStage ? (
+          ) : isInputStage ? (
             <Button onClick={submitStep} disabled={!value || isPending}>
-              {isPending ? <Spinner data-icon="inline-start" /> : null}继续
+              {isPending ? <Spinner data-icon="inline-start" /> : null}
+              {isPasswordInputStage ? "验证密码" : "继续"}
             </Button>
           ) : (
             <Button variant="outline" disabled>

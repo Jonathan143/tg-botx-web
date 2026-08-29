@@ -35,6 +35,7 @@ export default function SettingsPage() {
         dataDir: query.data.dataDir,
         telegramApiConfigured: query.data.telegramApiConfigured,
         notificationConfigured: query.data.notificationConfigured,
+        notificationTimezone: query.data.notificationTimezone,
       }
     : {};
   const databaseSettings: SettingsResponse = query.data

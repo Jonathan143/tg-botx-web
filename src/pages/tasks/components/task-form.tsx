@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
@@ -27,19 +28,65 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError } from "@/lib/api/client";
-import type { Account, TaskDefinition } from "@/lib/api/types";
+import type { Account, TaskDefinition, TaskRunProgress } from "@/lib/api/types";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 
 const defaultDefinition: TaskDefinition = {
   name: "",
-  account: "default",
+  account: "",
   target: "",
   schedule: { type: "fixed", timezone: "Asia/Shanghai", time: "08:00" },
   retry: { maxAttempts: 3, backoffSeconds: [30, 60, 120] },
   steps: [{ type: "send_message", text: "/checkin" }],
   notifications: { failure: true, success: false },
   outputBotResponse: false,
+  logBotResponse: false,
+  notifyBotResponse: false,
 };
+
+const STEP_FIELD_ALIASES: Array<[string, string]> = [
+  ["timeout_seconds", "timeoutSeconds"],
+  ["text_contains", "textContains"],
+  ["callback_data", "callbackData"],
+];
+
+function normalizeDefinitionForComparison(definition: TaskDefinition): TaskDefinition {
+  return {
+    ...definition,
+    steps: definition.steps.map((step) => {
+      const normalized = { ...step };
+      for (const [canonical, alias] of STEP_FIELD_ALIASES) {
+        if (normalized[canonical] === undefined && normalized[alias] !== undefined) {
+          normalized[canonical] = normalized[alias];
+        }
+        delete normalized[alias];
+      }
+      return normalized;
+    }),
+  };
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(",")}]`;
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function definitionsEqual(first: TaskDefinition, second: TaskDefinition): boolean {
+  return (
+    stableSerialize(normalizeDefinitionForComparison(first)) ===
+    stableSerialize(normalizeDefinitionForComparison(second))
+  );
+}
 
 const commonTimezones = [
   { value: "Asia/Shanghai", label: "中国标准时间（Asia/Shanghai）" },
@@ -62,6 +109,7 @@ export function TaskForm({
   isSubmitting,
   onTest,
   isTesting = false,
+  run,
   onSubmit,
 }: {
   initialValue?: TaskDefinition;
@@ -72,6 +120,7 @@ export function TaskForm({
   isSubmitting: boolean;
   onTest?: (definition: TaskDefinition) => Promise<void>;
   isTesting?: boolean;
+  run?: TaskRunProgress | null;
   onSubmit: (definition: TaskDefinition) => Promise<void>;
 }) {
   const initial = useMemo(() => initialValue ?? defaultDefinition, [initialValue]);
@@ -80,10 +129,16 @@ export function TaskForm({
   const [mode, setMode] = useState("visual");
   const [visualMode, setVisualMode] = useState("edit");
   const [error, setError] = useState<string | null>(null);
-  const isDirty =
-    mode === "yaml"
-      ? yamlText !== stringify(initial)
-      : stringify(definition) !== stringify(initial);
+  const isDirty = (() => {
+    if (mode !== "yaml") return !definitionsEqual(definition, initial);
+    try {
+      const parsed = parse(yamlText) as TaskDefinition;
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.steps)) return true;
+      return !definitionsEqual(parsed, initial);
+    } catch {
+      return true;
+    }
+  })();
 
   const accountOptions = useMemo(() => {
     if (accounts === undefined) {
@@ -112,9 +167,25 @@ export function TaskForm({
   }, [definition.schedule.timezone]);
 
   useEffect(() => {
+    // Execution events refresh the task snapshot while an unsaved draft may be
+    // open. Keep that draft visible so run step statuses stay aligned with the
+    // workflow that was actually tested; saved snapshots still rehydrate when
+    // the form is clean.
+    if (isDirty) return;
     setDefinition(initial);
     setYamlText(stringify(initial));
-  }, [initial]);
+  }, [initial, isDirty]);
+
+  useEffect(() => {
+    // 新建任务在账号列表异步加载完成后，仅在只有一个可用账号时自动选择。
+    // 编辑任务已有账号配置，不因账号列表刷新而覆盖用户的选择。
+    if (initialValue !== undefined || !accounts || mode === "yaml" || definition.account) return;
+    const activeAccounts = accounts.filter((account) => account.active);
+    if (activeAccounts.length !== 1) return;
+    const next = { ...definition, account: activeAccounts[0].name };
+    setDefinition(next);
+    setYamlText(stringify(next));
+  }, [accounts, definition, initialValue, mode]);
 
   const updateDefinition = (next: TaskDefinition) => {
     setDefinition(next);
@@ -141,12 +212,32 @@ export function TaskForm({
   };
 
   const readDefinition = () => {
-    const next = mode === "yaml" ? (parse(yamlText) as TaskDefinition) : definition;
+    const parsed = mode === "yaml" ? (parse(yamlText) as TaskDefinition) : definition;
+    const next: TaskDefinition = {
+      ...parsed,
+      retry: {
+        maxAttempts: parsed.retry?.maxAttempts ?? 3,
+        backoffSeconds: parsed.retry?.backoffSeconds ?? [30, 60, 120],
+      },
+    };
     if (!next.name?.trim() || !next.account?.trim() || !next.target?.trim()) {
       throw new Error("任务名称、账号和目标不能为空。");
     }
     if (!Array.isArray(next.steps) || next.steps.length === 0) {
       throw new Error("至少需要配置一个执行步骤。");
+    }
+    if (
+      !Number.isInteger(next.retry.maxAttempts) ||
+      next.retry.maxAttempts < 1 ||
+      next.retry.maxAttempts > 10
+    ) {
+      throw new Error("最大尝试次数必须是 1–10 之间的整数。");
+    }
+    if (
+      !Array.isArray(next.retry.backoffSeconds) ||
+      next.retry.backoffSeconds.some((value) => !Number.isInteger(value) || value < 0)
+    ) {
+      throw new Error("重试等待时间必须是非负整数列表。");
     }
     return next;
   };
@@ -348,6 +439,59 @@ export function TaskForm({
               </FieldGroup>
             </FieldSet>
             <FieldSet>
+              <FieldLegend>失败重试</FieldLegend>
+              <FieldGroup>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor="retry-max-attempts">最大尝试次数</FieldLabel>
+                    <Input
+                      id="retry-max-attempts"
+                      type="number"
+                      min={1}
+                      max={10}
+                      step={1}
+                      value={definition.retry.maxAttempts}
+                      onChange={(event) =>
+                        updateDefinition({
+                          ...definition,
+                          retry: {
+                            ...definition.retry,
+                            maxAttempts: Number(event.target.value),
+                          },
+                        })
+                      }
+                    />
+                    <FieldDescription>包含首次执行，取值范围为 1–10 次。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="retry-backoff-seconds">重试等待时间（秒）</FieldLabel>
+                    <Input
+                      id="retry-backoff-seconds"
+                      value={definition.retry.backoffSeconds.join(", ")}
+                      onChange={(event) =>
+                        updateDefinition({
+                          ...definition,
+                          retry: {
+                            ...definition.retry,
+                            backoffSeconds: event.target.value
+                              .split(",")
+                              .map((value) => value.trim())
+                              .filter(Boolean)
+                              .map((value) => Number(value))
+                              .filter((value) => Number.isFinite(value)),
+                          },
+                        })
+                      }
+                      placeholder="30, 60, 120"
+                    />
+                    <FieldDescription>
+                      按第 N 次重试顺序填写非负整数，使用逗号分隔；留空则立即重试。
+                    </FieldDescription>
+                  </Field>
+                </div>
+              </FieldGroup>
+            </FieldSet>
+            <FieldSet>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <FieldLegend>执行步骤</FieldLegend>
                 <ToggleGroup
@@ -361,6 +505,7 @@ export function TaskForm({
               {visualMode === "edit" ? (
                 <TaskWorkflowEditor
                   steps={definition.steps}
+                  run={run}
                   onChange={(steps) => updateDefinition({ ...definition, steps })}
                 />
               ) : (
@@ -429,6 +574,41 @@ export function TaskForm({
                         ...definition,
                         notifications: { ...definition.notifications, success: checked },
                       })
+                    }
+                  />
+                </Field>
+              </FieldGroup>
+            </FieldSet>
+            <FieldSet>
+              <FieldLegend>机器人回复</FieldLegend>
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="log-bot-response">记录机器人回复</FieldLabel>
+                    <FieldDescription>
+                      将机器人最后一次回复写入运行日志，回复可能包含敏感信息。
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    id="log-bot-response"
+                    checked={definition.logBotResponse ?? false}
+                    onCheckedChange={(checked) =>
+                      updateDefinition({ ...definition, logBotResponse: checked })
+                    }
+                  />
+                </Field>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="notify-bot-response">通知中包含机器人回复</FieldLabel>
+                    <FieldDescription>
+                      在任务结果通知中附带机器人最后一次回复，回复可能包含敏感信息。
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    id="notify-bot-response"
+                    checked={definition.notifyBotResponse ?? false}
+                    onCheckedChange={(checked) =>
+                      updateDefinition({ ...definition, notifyBotResponse: checked })
                     }
                   />
                 </Field>
