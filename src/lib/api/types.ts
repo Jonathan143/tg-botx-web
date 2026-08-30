@@ -146,6 +146,19 @@ export type AccountChat = {
   avatarUrl: string | null;
 };
 
+export type MessageProbeButton = {
+  row: number;
+  column: number;
+  text: string;
+  callbackData: string | null;
+};
+
+export type MessageProbeResponse = {
+  messageId: number;
+  text: string;
+  buttons: MessageProbeButton[];
+};
+
 export type LoginFlow = {
   flowId: string;
   accountName: string;

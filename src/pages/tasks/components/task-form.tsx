@@ -27,8 +27,13 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { ApiError } from "@/lib/api/client";
-import type { Account, TaskDefinition, TaskRunProgress } from "@/lib/api/types";
+import { apiRequest, jsonBody, ApiError } from "@/lib/api/client";
+import type {
+  Account,
+  MessageProbeResponse,
+  TaskDefinition,
+  TaskRunProgress,
+} from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 import { TaskTargetPicker } from "./task-target-picker";
@@ -115,6 +120,10 @@ export function TaskForm({
   const [mode, setMode] = useState("visual");
   const [visualMode, setVisualMode] = useState("edit");
   const [error, setError] = useState<string | null>(null);
+  const [probeText, setProbeText] = useState("");
+  const [probeResult, setProbeResult] = useState<MessageProbeResponse | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
+  const [isProbing, setIsProbing] = useState(false);
   const isDirty = (() => {
     if (mode !== "yaml") return !definitionsEqual(definition, initial);
     try {
@@ -177,6 +186,14 @@ export function TaskForm({
     setDefinition(next);
     setYamlText(stringify(next));
   }, [accounts, definition, initialValue, mode]);
+
+  useEffect(() => {
+    if (probeText) return;
+    const firstMessage = definition.steps.find(
+      (step) => step.type === "send_message" && typeof step.text === "string" && step.text,
+    );
+    if (firstMessage && typeof firstMessage.text === "string") setProbeText(firstMessage.text);
+  }, [definition.steps, probeText]);
 
   const updateDefinition = (next: TaskDefinition) => {
     setDefinition(next);
@@ -262,6 +279,35 @@ export function TaskForm({
   const handleTest = (event: React.MouseEvent<HTMLButtonElement>) =>
     onTest ? handleAction(event, onTest) : Promise.resolve();
 
+  const probeButtons = async () => {
+    if (!selectedAccount?.id || !definition.target.trim()) {
+      setProbeError("请先选择 Telegram 账号和目标聊天。");
+      return;
+    }
+    if (!probeText.trim()) {
+      setProbeError("请输入要发送的指令。");
+      return;
+    }
+    setIsProbing(true);
+    setProbeError(null);
+    setProbeResult(null);
+    try {
+      const result = await apiRequest<MessageProbeResponse>(
+        `/api/accounts/${selectedAccount.id}/messages/probe`,
+        { method: "POST", body: jsonBody({ target: definition.target, text: probeText }) },
+      );
+      setProbeResult(result);
+    } catch (probeRequestError) {
+      setProbeError(
+        probeRequestError instanceof Error
+          ? probeRequestError.message
+          : "获取按钮失败，请稍后重试。",
+      );
+    } finally {
+      setIsProbing(false);
+    }
+  };
+
   return (
     <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-5">
       <Tabs value={mode} onValueChange={handleModeChange}>
@@ -338,6 +384,57 @@ export function TaskForm({
                   : "先选择 Telegram 账号，再选择目标聊天。"}
               </FieldDescription>
             </Field>
+            <FieldSet>
+              <FieldLegend>按钮探测</FieldLegend>
+              <FieldDescription>
+                向当前目标发送一条指令，读取机器人回复中的按钮文字、行列位置和 callback_data。
+                这会真实发送 Telegram 消息。
+              </FieldDescription>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={probeText}
+                  onChange={(event) => setProbeText(event.target.value)}
+                  placeholder="例如：/start"
+                  disabled={!selectedAccount?.active || !definition.target.trim() || isProbing}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void probeButtons()}
+                  disabled={!selectedAccount?.active || !definition.target.trim() || isProbing}
+                >
+                  {isProbing ? <Spinner data-icon="inline-start" /> : null}
+                  获取消息与按钮
+                </Button>
+              </div>
+              {probeError ? <FieldError>{probeError}</FieldError> : null}
+              {probeResult ? (
+                <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+                  <p className="whitespace-pre-wrap break-words">
+                    {probeResult.text || "（无文本）"}
+                  </p>
+                  {probeResult.buttons.length > 0 ? (
+                    <div className="mt-3 grid gap-2">
+                      {probeResult.buttons.map((button) => (
+                        <div
+                          key={`${button.row}-${button.column}-${button.text}`}
+                          className="grid gap-1 rounded-md border bg-background p-2 sm:grid-cols-[auto_1fr] sm:items-center"
+                        >
+                          <span className="font-medium">
+                            {button.text || "（无文字）"} · 行 {button.row} / 列 {button.column}
+                          </span>
+                          <code className="select-all break-all text-xs text-muted-foreground">
+                            {button.callbackData ?? "非回调按钮"}
+                          </code>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">回复中没有可识别的按钮。</p>
+                  )}
+                </div>
+              ) : null}
+            </FieldSet>
             <FieldSet>
               <FieldLegend>调度</FieldLegend>
               <FieldGroup>
