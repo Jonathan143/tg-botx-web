@@ -80,10 +80,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       status: forcedUnauthenticated
         ? "unauthenticated"
         : sessionQuery.isPending
-        ? "loading"
-        : sessionQuery.data?.authenticated
-          ? "authenticated"
-          : "unauthenticated",
+          ? "loading"
+          : sessionQuery.data?.authenticated
+            ? "authenticated"
+            : "unauthenticated",
       sessionExpiresAt: sessionQuery.data?.sessionExpiresAt ?? null,
       unlock,
       logout,

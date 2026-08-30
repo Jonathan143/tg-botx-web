@@ -31,6 +31,7 @@ import { ApiError } from "@/lib/api/client";
 import type { Account, TaskDefinition, TaskRunProgress } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
+import { TaskTargetPicker } from "./task-target-picker";
 
 const defaultDefinition: TaskDefinition = {
   name: "",
@@ -165,6 +166,11 @@ export function TaskForm({
     }
     return activeAccounts;
   }, [accounts, definition.account]);
+
+  const selectedAccount = useMemo(
+    () => accounts?.find((account) => account.name === definition.account),
+    [accounts, definition.account],
+  );
 
   const timezoneOptions = useMemo(() => {
     const currentTimezone = definition.schedule.timezone;
@@ -347,14 +353,16 @@ export function TaskForm({
             </div>
             <Field>
               <FieldLabel htmlFor="task-target">目标聊天</FieldLabel>
-              <Input
-                id="task-target"
-                value={definition.target}
-                onChange={(event) =>
-                  updateDefinition({ ...definition, target: event.target.value })
-                }
-                placeholder="用户名、链接或对话 ID"
+              <TaskTargetPicker
+                account={selectedAccount}
+                target={definition.target}
+                onTargetChange={(target) => updateDefinition({ ...definition, target })}
               />
+              <FieldDescription>
+                {selectedAccount
+                  ? "点击上方目标卡片，在弹框中远程搜索并筛选对话。"
+                  : "先选择 Telegram 账号，再选择目标聊天。"}
+              </FieldDescription>
             </Field>
             <FieldSet>
               <FieldLegend>调度</FieldLegend>

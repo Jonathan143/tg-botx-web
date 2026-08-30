@@ -134,6 +134,15 @@ export type Account = {
   taskCount?: number;
 };
 
+export type AccountChat = {
+  id: string;
+  type: "bot" | "group" | "private";
+  title: string;
+  username: string | null;
+  hasAvatar: boolean;
+  avatarUrl: string | null;
+};
+
 export type LoginFlow = {
   flowId: string;
   accountName: string;

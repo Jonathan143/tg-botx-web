@@ -82,25 +82,18 @@ export function TaskOverview({
   return (
     <div className="flex flex-col gap-5 pt-6">
       <Card className="overflow-visible">
-        <CardContent className="grid gap-5 p-5 sm:grid-cols-2 xl:grid-cols-5">
-          <Stat icon={Play} label="工作流" value={`${stepCount} 个步骤`} detail="main 草稿" />
-          <Stat
-            icon={Clock3}
-            label="下次执行"
-            value={formatDateTime(task.nextRunAt)}
-            detail={schedule}
-          />
+        <CardContent className="grid gap-5 px-5 sm:grid-cols-2 xl:grid-cols-5">
+          <Stat icon={Play} label="工作流" value={`${stepCount} 个步骤`} />
+          <Stat icon={Clock3} label="下次执行" value={formatDateTime(task.nextRunAt)} />
           <Stat
             icon={isSuccessful ? CheckCircle2 : RotateCcw}
             label="上次运行"
             value={task.lastStatus ?? "暂无记录"}
-            detail={formatDateTime(task.lastRunAt)}
           />
           <Stat
             icon={GitBranch}
             label="正式版本"
             value={task.latestWorkflowVersion ? `v${task.latestWorkflowVersion}` : "未发布"}
-            detail="发布后才会执行"
           />
           <Stat icon={Clock3} label="更新时间" value={formatDateTime(task.updatedAt)} />
         </CardContent>
