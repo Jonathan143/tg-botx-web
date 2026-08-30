@@ -1,8 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCwIcon } from "lucide-react";
+import { useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/resource-state";
 import { StatusBadge } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -11,19 +14,54 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { apiRequest } from "@/lib/api/client";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/toast";
+import { apiRequest, jsonBody } from "@/lib/api/client";
 import type { Account, Paginated } from "@/lib/api/types";
 import { formatDateTime } from "@/lib/format";
 import { LoginAccountDialog } from "./components/login-account-dialog";
 import { LogoutAccountDialog } from "./components/logout-account-dialog";
 
 export default function AccountsPage() {
+  const queryClient = useQueryClient();
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ["accounts"],
     queryFn: () => apiRequest<Paginated<Account> | Account[]>("/api/accounts"),
     refetchInterval: 30_000,
   });
   const accounts = Array.isArray(query.data) ? query.data : (query.data?.items ?? []);
+
+  const syncAccountChats = async (account: Account) => {
+    if (!account.active || syncingAccountId) return;
+    setSyncingAccountId(account.id);
+    try {
+      const result = await apiRequest<{
+        added: number;
+        updated: number;
+        removed: number;
+        total: number;
+      }>(`/api/accounts/${account.id}/chats/pull`, {
+        method: "POST",
+        body: jsonBody({}),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["account-chats", account.id] });
+      toast.add({
+        type: "success",
+        title: "聊天数据同步完成",
+        description: `共 ${result.total} 个对话，新增 ${result.added} 个，更新 ${result.updated} 个，失效 ${result.removed} 个。`,
+      });
+    } catch (error) {
+      toast.add({
+        type: "error",
+        title: "聊天数据同步失败",
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setSyncingAccountId(null);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -65,9 +103,25 @@ export default function AccountsPage() {
                   {formatDateTime(account.createdAt)}
                 </p>
               </CardContent>
-              <CardFooter>
+              <CardFooter className="flex flex-wrap items-center justify-between gap-2">
                 {account.active ? (
-                  <LogoutAccountDialog account={account} onComplete={() => query.refetch()} />
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={syncingAccountId !== null}
+                      onClick={() => syncAccountChats(account)}
+                    >
+                      {syncingAccountId === account.id ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <RefreshCwIcon className="size-3.5" />
+                      )}
+                      同步聊天数据
+                    </Button>
+                    <LogoutAccountDialog account={account} onComplete={() => query.refetch()} />
+                  </>
                 ) : (
                   <span className="text-xs text-muted-foreground">可使用相同名称重新登录</span>
                 )}

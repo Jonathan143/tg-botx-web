@@ -78,26 +78,26 @@ export function TaskTargetPicker({
 }) {
   const [chatType, setChatType] = useState<ChatType>("all");
   const [chatSearch, setChatSearch] = useState("");
+  const [submittedChatSearch, setSubmittedChatSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [chatListElement, setChatListElement] = useState<HTMLDivElement | null>(null);
   const accountId = account?.id;
   const targetSearch = target.trim();
-  const trimmedChatSearch = chatSearch.trim();
   const accountChatsEnabled = dialogOpen && Boolean(accountId && account.active);
-  const isDefaultDialogQuery = chatType === "all" && !trimmedChatSearch;
+  const isDefaultDialogQuery = chatType === "all" && !submittedChatSearch;
   const chatsQuery = useQuery({
     queryKey: ["account-chats", accountId, "all"],
     queryFn: () =>
-      apiRequest<{ items: AccountChat[] }>(`/api/accounts/${accountId}/chats?type=all&limit=50`),
+      apiRequest<{ items: AccountChat[] }>(`/api/accounts/${accountId}/chats?type=all&limit=200`),
     // 目标选择弹框未打开时不需要加载聊天列表。
     enabled: accountChatsEnabled,
     staleTime: 60_000,
   });
   const dialogChatsQuery = useQuery({
-    queryKey: ["account-chats", accountId, chatType, trimmedChatSearch],
+    queryKey: ["account-chats", accountId, chatType, submittedChatSearch],
     queryFn: () => {
-      const params = new URLSearchParams({ type: chatType, limit: "50" });
-      if (trimmedChatSearch) params.set("query", trimmedChatSearch);
+      const params = new URLSearchParams({ type: chatType, limit: "200" });
+      if (submittedChatSearch) params.set("query", submittedChatSearch);
       return apiRequest<{ items: AccountChat[] }>(
         `/api/accounts/${accountId}/chats?${params.toString()}`,
       );
@@ -139,6 +139,7 @@ export function TaskTargetPicker({
     if (!accountId) return;
     setChatType("all");
     setChatSearch("");
+    setSubmittedChatSearch("");
     setDialogOpen(false);
   }, [accountId]);
 
@@ -181,7 +182,7 @@ export function TaskTargetPicker({
         </span>
         <span className="text-muted-foreground">更换</span>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>选择目标聊天</DialogTitle>
           <DialogDescription>
@@ -204,7 +205,12 @@ export function TaskTargetPicker({
             <Input
               value={chatSearch}
               onChange={(event) => setChatSearch(event.target.value)}
-              placeholder="远程搜索名称、@用户名或 ID"
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                event.preventDefault();
+                setSubmittedChatSearch(event.currentTarget.value.trim());
+              }}
+              placeholder="输入名称、@用户名或 ID，按回车搜索"
               aria-label="搜索账号对话"
               className="sm:flex-1"
               autoFocus

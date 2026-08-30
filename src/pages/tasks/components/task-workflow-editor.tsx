@@ -68,8 +68,10 @@ type WorkflowNodeData = {
   step: WorkflowStep;
   selected: boolean;
   runStatus?: string | null;
+  durationMs?: number | null;
   error?: string | null;
   botResponse?: string | null;
+  botButtons?: string[][] | null;
   readOnly?: boolean;
   onSelect: (index: number) => void;
   onMove: (index: number, direction: -1 | 1) => void;
@@ -165,8 +167,100 @@ function runBadge(status?: string | null) {
   return <Badge variant={variant}>{label ?? status}</Badge>;
 }
 
+function formatStepDuration(durationMs?: number | null) {
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) {
+    return null;
+  }
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
+  const seconds = (durationMs / 1000).toFixed(2).replace(/\.?0+$/, "");
+  return `${seconds}s`;
+}
+
+function TelegramMessagePreview({
+  text,
+  buttons,
+  compact = false,
+}: {
+  text?: string | null;
+  buttons?: string[][] | null;
+  compact?: boolean;
+}) {
+  const rows = (buttons ?? []).filter((row) => Array.isArray(row) && row.length > 0);
+  const rowKeyCounts = new Map<string, number>();
+  if (!text && rows.length === 0) return null;
+
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-lg border bg-muted/30",
+        compact ? "text-xs" : "text-sm",
+      )}
+    >
+      {text ? (
+        <div className="whitespace-pre-wrap break-words px-3 py-2 text-foreground">{text}</div>
+      ) : null}
+      {rows.length > 0 ? (
+        <div className="grid gap-1 border-t bg-muted/20 p-1.5" role="group" aria-label="机器人按钮">
+          {rows.map((row) => {
+            const rowIdentity = JSON.stringify(row);
+            const rowOccurrence = rowKeyCounts.get(rowIdentity) ?? 0;
+            rowKeyCounts.set(rowIdentity, rowOccurrence + 1);
+            const rowKey = `button-row-${rowIdentity}-${rowOccurrence}`;
+            const labelKeyCounts = new Map<string, number>();
+
+            return (
+              <div
+                className="grid gap-1"
+                key={rowKey}
+                style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
+              >
+                {row.map((label) => {
+                  const labelOccurrence = labelKeyCounts.get(label) ?? 0;
+                  labelKeyCounts.set(label, labelOccurrence + 1);
+                  return (
+                    <span
+                      className={cn(
+                        "flex min-w-0 items-center justify-center rounded-md border border-primary/15 bg-primary/10 px-2 text-center font-medium text-primary",
+                        compact ? "min-h-7 py-1 text-[11px]" : "min-h-9 py-1.5",
+                      )}
+                      key={`button-${rowKey}-${label}-${labelOccurrence}`}
+                    >
+                      <span className="break-words">{label}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BotResponsePreview({
+  text,
+  buttons,
+  compact = false,
+}: {
+  text?: string | null;
+  buttons?: string[][] | null;
+  compact?: boolean;
+}) {
+  if (!text && (!buttons || buttons.length === 0)) return null;
+  return (
+    <div className="mt-2">
+      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        机器人回复
+      </p>
+      <TelegramMessagePreview text={text} buttons={buttons} compact={compact} />
+    </div>
+  );
+}
+
 function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
   const invalid = data.step.type === "send_message" && typeof data.step.text !== "string";
+  const durationLabel = formatStepDuration(data.durationMs);
   return (
     <div
       className={cn(
@@ -193,6 +287,9 @@ function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">步骤 {data.index + 1}</span>
             {runBadge(data.runStatus)}
+            {durationLabel ? (
+              <span className="text-xs tabular-nums text-muted-foreground">{durationLabel}</span>
+            ) : null}
             {invalid ? <CircleAlert className="text-destructive" aria-label="配置不完整" /> : null}
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-1.5">
@@ -203,11 +300,7 @@ function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
           {data.error ? (
             <p className="mt-1 line-clamp-2 text-xs text-destructive">{data.error}</p>
           ) : null}
-          {data.botResponse !== undefined && data.botResponse !== null ? (
-            <p className="mt-1 whitespace-pre-wrap break-words text-xs text-muted-foreground">
-              机器人回复：{data.botResponse}
-            </p>
-          ) : null}
+          <BotResponsePreview text={data.botResponse} buttons={data.botButtons} compact />
         </div>
       </div>
       {!data.readOnly ? (
@@ -448,6 +541,12 @@ function MatcherField({
   const [modeOverride, setModeOverride] = useState<MatcherMode | null>(null);
   const mode = matcher == null ? (modeOverride ?? parsedMatcher.mode) : parsedMatcher.mode;
   const { values } = parsedMatcher;
+  const valueKeyCounts = new Map<string, number>();
+  const valueEntries = values.map((value) => {
+    const valueOccurrence = valueKeyCounts.get(value) ?? 0;
+    valueKeyCounts.set(value, valueOccurrence + 1);
+    return { value, key: `${id}-${JSON.stringify([value, valueOccurrence])}` };
+  });
   const updateMatcher = (nextValues: string[], nextMode: MatcherMode) => {
     const cleanValues = nextValues.filter((value) => value.length > 0);
     if (cleanValues.length === 0) {
@@ -482,12 +581,12 @@ function MatcherField({
         ))}
       </ToggleGroup>
       <div className="flex flex-col gap-2">
-        {values.map((value, index) => (
-          <div className="flex gap-2" key={`${id}-${mode}-${value}`}>
+        {valueEntries.map((entry, index) => (
+          <div className="flex gap-2" key={entry.key}>
             <Input
               id={`${id}-${index}`}
               aria-label={`${label} ${index + 1}`}
-              value={value}
+              value={entry.value}
               onChange={(event) => {
                 const nextValues = [...values];
                 nextValues[index] = event.target.value;
@@ -773,8 +872,10 @@ export function TaskWorkflowEditor({
             step,
             selected: selectedIndex === index,
             runStatus: stepStatus?.status,
+            durationMs: stepStatus?.durationMs,
             error: stepStatus?.error,
             botResponse: stepStatus?.botResponse,
+            botButtons: stepStatus?.botButtons,
             readOnly,
             onSelect: setSelectedIndex,
             onMove: move,
@@ -858,6 +959,7 @@ export function TaskWorkflowEditor({
           </Card>
           {steps.map((step, index) => {
             const stepStatus = stepStatusByIndex.get(index);
+            const durationLabel = formatStepDuration(stepStatus?.durationMs);
             const stepLogs = (runLogs ?? run?.logs ?? []).filter((log) => log.stepIndex === index);
             return (
               <Card
@@ -878,16 +980,21 @@ export function TaskWorkflowEditor({
                     <StepIcon step={step} className="size-4 shrink-0 text-primary" />
                     步骤 {index + 1} · {stepLabel(step)}
                     {runBadge(stepStatus?.status)}
+                    {durationLabel ? (
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {durationLabel}
+                      </span>
+                    ) : null}
                   </CardTitle>
                   <CardDescription>{stepSummary(step)}</CardDescription>
                   {stepStatus?.error ? (
                     <p className="text-xs text-destructive">{stepStatus.error}</p>
                   ) : null}
-                  {stepStatus?.botResponse !== undefined && stepStatus.botResponse !== null ? (
-                    <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                      机器人回复：{stepStatus.botResponse}
-                    </p>
-                  ) : null}
+                  <BotResponsePreview
+                    text={stepStatus?.botResponse}
+                    buttons={stepStatus?.botButtons}
+                    compact
+                  />
                   {stepLogs.length > 0 ? (
                     <p className="text-xs text-muted-foreground">
                       {stepLogs.length} 条运行日志 · 点击查看
@@ -994,23 +1101,27 @@ export function StepEditorSheet({
 }
 
 function RunStepDetails({ status, logs }: { status?: TaskStepStatus; logs: TaskRunLog[] }) {
+  const durationLabel = formatStepDuration(status?.durationMs);
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-1">
         <span className="text-xs text-muted-foreground">节点状态</span>
-        <div>{runBadge(status?.status) ?? <Badge variant="outline">暂无状态</Badge>}</div>
+        <div className="flex items-center gap-2">
+          {runBadge(status?.status) ?? <Badge variant="outline">暂无状态</Badge>}
+          {durationLabel ? (
+            <span className="text-xs tabular-nums text-muted-foreground">{durationLabel}</span>
+          ) : null}
+        </div>
       </div>
       {status?.error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           {status.error}
         </div>
       ) : null}
-      {status?.botResponse ? (
+      {status?.botResponse || (status?.botButtons && status.botButtons.length > 0) ? (
         <div className="grid gap-1">
           <span className="text-xs text-muted-foreground">机器人回复</span>
-          <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs">
-            {status.botResponse}
-          </pre>
+          <TelegramMessagePreview text={status.botResponse} buttons={status.botButtons} />
         </div>
       ) : null}
       <div className="grid gap-2">

@@ -56,6 +56,10 @@ export type TaskStepStatus = {
   status: "pending" | "running" | "success" | "failed" | "skipped";
   error?: string | null;
   botResponse?: string | null;
+  /** Telegram inline/reply keyboard labels, grouped by their original rows. */
+  botButtons?: string[][] | null;
+  /** Elapsed execution time for the node, in milliseconds. */
+  durationMs?: number | null;
 };
 
 export type TaskRunProgress = {
