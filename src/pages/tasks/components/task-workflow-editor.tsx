@@ -28,7 +28,7 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -595,10 +595,10 @@ function StepFields({
         : step.callbackData !== undefined
           ? "callback"
           : step.text_contains !== undefined || step.textContains !== undefined
-          ? "contains"
-          : step.text !== undefined
-            ? "exact"
-            : "position";
+            ? "contains"
+            : step.text !== undefined
+              ? "exact"
+              : "position";
     const changeButtonMode = (mode: string) => {
       const {
         text: _text,
@@ -887,22 +887,16 @@ export function TaskWorkflowEditor({
             return (
               <Card
                 key={JSON.stringify(step)}
-                className={
-                  readOnly ? "cursor-pointer transition-colors hover:bg-muted/40" : undefined
-                }
-                onClick={readOnly ? () => setSelectedIndex(index) : undefined}
-                onKeyDown={
-                  readOnly
-                    ? (event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSelectedIndex(index);
-                        }
-                      }
-                    : undefined
-                }
-                role={readOnly ? "button" : undefined}
-                tabIndex={readOnly ? 0 : undefined}
+                className="cursor-pointer transition-colors hover:bg-muted/40"
+                onClick={() => setSelectedIndex(index)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedIndex(index);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
               >
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-1.5 text-sm">
@@ -923,22 +917,11 @@ export function TaskWorkflowEditor({
                     <p className="text-xs text-muted-foreground">
                       {stepLogs.length} 条运行日志 · 点击查看
                     </p>
-                  ) : readOnly ? (
-                    <p className="text-xs text-muted-foreground">点击查看节点详情</p>
                   ) : null}
                 </CardHeader>
-                {!readOnly ? (
-                  <CardContent>
-                    <StepFields
-                      step={step}
-                      onChange={(next) =>
-                        onChange(
-                          steps.map((item, itemIndex) => (itemIndex === index ? next : item)),
-                        )
-                      }
-                    />
-                  </CardContent>
-                ) : null}
+                <CardContent className="pt-0 text-xs text-muted-foreground">
+                  {readOnly ? "点击查看节点详情" : "点击编辑步骤"}
+                </CardContent>
               </Card>
             );
           })}
@@ -953,7 +936,7 @@ export function TaskWorkflowEditor({
       <StepEditorSheet
         step={selectedIndex === null ? null : (steps[selectedIndex] ?? null)}
         index={selectedIndex ?? 0}
-        open={selectedIndex !== null && (readOnly || !isMobile)}
+        open={selectedIndex !== null}
         readOnly={readOnly}
         runStatus={selectedIndex === null ? undefined : stepStatusByIndex.get(selectedIndex)}
         runLogs={
@@ -992,10 +975,21 @@ export function StepEditorSheet({
   runStatus?: TaskStepStatus;
   runLogs?: TaskRunLog[];
 }) {
+  const [draftStep, setDraftStep] = useState<WorkflowStep | null>(step);
+
+  useEffect(() => {
+    if (open) setDraftStep(step);
+  }, [open, step]);
+
+  const finishEditing = () => {
+    if (!readOnly && draftStep) onChange(draftStep);
+    onOpenChange(false);
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-        <SheetHeader>
+      <SheetContent side="right" className="w-full gap-0 overflow-hidden sm:max-w-md">
+        <SheetHeader className="shrink-0 border-b">
           <SheetTitle className="flex items-center gap-1.5">
             {step ? <StepIcon step={step} className="size-4 shrink-0 text-primary" /> : null}
             步骤 {index + 1} · {step ? stepLabel(step) : ""}
@@ -1006,15 +1000,15 @@ export function StepEditorSheet({
               : "编辑该节点的执行参数。保存任务前会经过后端校验。"}
           </SheetDescription>
         </SheetHeader>
-        <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {readOnly ? (
             <RunStepDetails status={runStatus} logs={runLogs} />
-          ) : step ? (
-            <StepFields step={step} onChange={onChange} />
+          ) : draftStep ? (
+            <StepFields step={draftStep} onChange={setDraftStep} />
           ) : null}
         </div>
-        <SheetFooter>
-          <Button type="button" onClick={() => onOpenChange(false)}>
+        <SheetFooter className="shrink-0 border-t">
+          <Button type="button" onClick={finishEditing}>
             <CheckCircle2 data-icon="inline-start" />
             {readOnly ? "关闭" : "完成编辑"}
           </Button>

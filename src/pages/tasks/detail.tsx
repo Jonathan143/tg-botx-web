@@ -1,12 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, useParams } from "react-router-dom";
 
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, PageSkeleton } from "@/components/resource-state";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
 import { useTaskEvents } from "@/hooks/use-task-events";
 import { apiRequest, jsonBody } from "@/lib/api/client";
@@ -15,8 +22,27 @@ import { TaskActions } from "./components/task-actions";
 import { TaskForm } from "./components/task-form";
 import { TaskOverview } from "./components/task-overview";
 
+function definitionFromTask(task: Task): TaskDefinition {
+  return (
+    task.definition ?? {
+      name: task.name,
+      account: task.account,
+      target: task.target,
+      schedule: task.schedule,
+      retry: { maxAttempts: 3, backoffSeconds: [30, 60, 120] },
+      steps: [],
+      notifications: { failure: true, success: false },
+      logBotResponse: false,
+      notifyBotResponse: false,
+    }
+  );
+}
+
 export default function TaskDetailPage() {
   const { taskId } = useParams();
+  const [configOpen, setConfigOpen] = useState(false);
+  const [workflowDraft, setWorkflowDraft] = useState<TaskDefinition | null>(null);
+  const [workflowDirty, setWorkflowDirty] = useState(false);
   const queryClient = useQueryClient();
   const taskQuery = useQuery({
     queryKey: ["task", taskId],
@@ -31,6 +57,13 @@ export default function TaskDetailPage() {
   const accounts = Array.isArray(accountsQuery.data)
     ? accountsQuery.data
     : (accountsQuery.data?.items ?? []);
+  const savedDefinition = useMemo(
+    () => (taskQuery.data ? definitionFromTask(taskQuery.data) : null),
+    [taskQuery.data],
+  );
+  useEffect(() => {
+    if (!workflowDirty && savedDefinition) setWorkflowDraft(savedDefinition);
+  }, [savedDefinition, workflowDirty]);
   const updateMutation = useMutation({
     mutationFn: async (definition: TaskDefinition) => {
       await apiRequest("/api/tasks/validate", { method: "POST", body: jsonBody({ definition }) });
@@ -43,6 +76,9 @@ export default function TaskDetailPage() {
       queryClient.setQueryData(["task", taskId], task);
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast.add({ type: "success", title: "任务配置已保存" });
+      setWorkflowDraft(definitionFromTask(task));
+      setWorkflowDirty(false);
+      setConfigOpen(false);
     },
   });
   const publishMutation = useMutation({
@@ -75,6 +111,7 @@ export default function TaskDetailPage() {
       toast.add({ type: "success", title: "测试工作流已加入执行队列" });
     },
   });
+  const activeDefinition = workflowDraft ?? savedDefinition;
   if (!taskId) return <Navigate to="/tasks" replace />;
 
   return (
@@ -100,83 +137,97 @@ export default function TaskDetailPage() {
                   }
                 />
                 <TaskActions task={taskQuery.data} />
+                <Button type="button" variant="outline" onClick={() => setConfigOpen(true)}>
+                  编辑配置
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => publishMutation.mutate()}
+                  disabled={publishMutation.isPending || taskQuery.data.archived || workflowDirty}
+                >
+                  {publishMutation.isPending
+                    ? "发布中…"
+                    : workflowDirty
+                      ? "请先保存工作流"
+                      : "发布 main"}
+                </Button>
               </>
             }
           />
-          <Tabs defaultValue="overview">
-            <TabsList>
-              <TabsTrigger value="overview">概览</TabsTrigger>
-              <TabsTrigger value="configuration">配置</TabsTrigger>
-            </TabsList>
-            <TabsContent value="overview" className="pt-5">
-              <TaskOverview task={taskQuery.data} />
-            </TabsContent>
-            <TabsContent value="configuration" className="pt-5">
-              <Card>
-                <div className="flex flex-col gap-3 border-b px-6 py-5 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="font-medium">工作流版本</p>
-                    <p className="text-sm text-muted-foreground">
-                      {taskQuery.data.latestWorkflowVersion
-                        ? `当前正式版本 v${taskQuery.data.latestWorkflowVersion}；编辑内容保存在 main 草稿。`
-                        : "尚未发布正式版本；请先发布后再启用任务。"}
-                    </p>
-                    {taskQuery.data.workflowVersions &&
-                    taskQuery.data.workflowVersions.length > 0 ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        历史版本：
-                        {taskQuery.data.workflowVersions
-                          .map((version) => ` v${version.version}`)
-                          .join("、")}
-                      </p>
-                    ) : null}
-                  </div>
+          {activeDefinition ? (
+            <TaskOverview
+              task={taskQuery.data}
+              definition={activeDefinition}
+              workflowDirty={workflowDirty}
+              isSavingWorkflow={updateMutation.isPending}
+              isTestingWorkflow={testMutation.isPending}
+              onStepsChange={(steps) => {
+                setWorkflowDraft((current) => ({ ...(current ?? activeDefinition), steps }));
+                setWorkflowDirty(true);
+              }}
+              onSaveWorkflow={() => {
+                if (!workflowDraft) return;
+                updateMutation.mutate(workflowDraft);
+              }}
+              onTestWorkflow={() => {
+                if (!activeDefinition) return;
+                testMutation.mutate(activeDefinition);
+              }}
+            />
+          ) : null}
+          <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+            <DialogContent className="flex h-[92vh] max-h-[92vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+              <DialogHeader className="shrink-0 border-b px-6 py-5">
+                <DialogTitle>任务配置</DialogTitle>
+                <DialogDescription>
+                  调整任务信息、执行计划、重试和通知；工作流步骤请直接在主视图编辑。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                <TaskForm
+                  accounts={accounts}
+                  accountsLoading={accountsQuery.isPending}
+                  accountsError={accountsQuery.isError}
+                  initialValue={activeDefinition ?? definitionFromTask(taskQuery.data)}
+                  submitLabel="保存配置"
+                  isSubmitting={updateMutation.isPending}
+                  isTesting={testMutation.isPending}
+                  run={taskQuery.data.run}
+                  onSubmit={async (definition) => {
+                    try {
+                      await updateMutation.mutateAsync(definition);
+                    } catch (error) {
+                      throw error instanceof Error ? error : new Error("保存失败");
+                    }
+                  }}
+                  onCancel={() => setConfigOpen(false)}
+                  showWorkflow={false}
+                  formId="task-config-form"
+                  hideFooter
+                />
+              </div>
+              <div className="shrink-0 border-t bg-popover px-6 py-4">
+                <div className="flex justify-end gap-2">
                   <Button
                     type="button"
-                    onClick={() => publishMutation.mutate()}
-                    disabled={publishMutation.isPending || taskQuery.data.archived}
+                    variant="outline"
+                    onClick={() => setConfigOpen(false)}
+                    disabled={updateMutation.isPending || testMutation.isPending}
                   >
-                    {publishMutation.isPending ? "发布中…" : "发布 main"}
+                    取消
+                  </Button>
+                  <Button
+                    type="submit"
+                    form="task-config-form"
+                    disabled={updateMutation.isPending || testMutation.isPending}
+                  >
+                    {updateMutation.isPending ? <Spinner data-icon="inline-start" /> : null}
+                    {updateMutation.isPending ? "保存中…" : "保存配置"}
                   </Button>
                 </div>
-                <CardContent>
-                  <TaskForm
-                    accounts={accounts}
-                    accountsLoading={accountsQuery.isPending}
-                    accountsError={accountsQuery.isError}
-                    initialValue={
-                      taskQuery.data.definition ??
-                      ({
-                        name: taskQuery.data.name,
-                        account: taskQuery.data.account,
-                        target: taskQuery.data.target,
-                        schedule: taskQuery.data.schedule,
-                        retry: { maxAttempts: 3, backoffSeconds: [30, 60, 120] },
-                        steps: [],
-                        notifications: { failure: true, success: false },
-                        logBotResponse: false,
-                        notifyBotResponse: false,
-                      } satisfies TaskDefinition)
-                    }
-                    submitLabel="保存配置"
-                    isSubmitting={updateMutation.isPending}
-                    isTesting={testMutation.isPending}
-                    run={taskQuery.data.run}
-                    onTest={async (definition) => {
-                      await testMutation.mutateAsync(definition);
-                    }}
-                    onSubmit={async (definition) => {
-                      try {
-                        await updateMutation.mutateAsync(definition);
-                      } catch (error) {
-                        throw error instanceof Error ? error : new Error("保存失败");
-                      }
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+              </div>
+            </DialogContent>
+          </Dialog>
         </>
       ) : null}
     </>

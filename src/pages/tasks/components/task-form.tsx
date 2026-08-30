@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError } from "@/lib/api/client";
 import type { Account, TaskDefinition, TaskRunProgress } from "@/lib/api/types";
+import { cn } from "@/lib/utils";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 
 const defaultDefinition: TaskDefinition = {
@@ -111,6 +112,11 @@ export function TaskForm({
   isTesting = false,
   run,
   onSubmit,
+  onCancel,
+  showWorkflow = true,
+  footerClassName,
+  formId,
+  hideFooter = false,
 }: {
   initialValue?: TaskDefinition;
   accounts?: Account[];
@@ -122,6 +128,11 @@ export function TaskForm({
   isTesting?: boolean;
   run?: TaskRunProgress | null;
   onSubmit: (definition: TaskDefinition) => Promise<void>;
+  onCancel?: () => void;
+  showWorkflow?: boolean;
+  footerClassName?: string;
+  formId?: string;
+  hideFooter?: boolean;
 }) {
   const initial = useMemo(() => initialValue ?? defaultDefinition, [initialValue]);
   const [definition, setDefinition] = useState<TaskDefinition>(initial);
@@ -272,12 +283,14 @@ export function TaskForm({
     onTest ? handleAction(event, onTest) : Promise.resolve();
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-5">
       <Tabs value={mode} onValueChange={handleModeChange}>
-        <TabsList>
-          <TabsTrigger value="visual">可视化配置</TabsTrigger>
-          <TabsTrigger value="yaml">YAML 高级模式</TabsTrigger>
-        </TabsList>
+        {showWorkflow ? (
+          <TabsList>
+            <TabsTrigger value="visual">可视化配置</TabsTrigger>
+            <TabsTrigger value="yaml">YAML 高级模式</TabsTrigger>
+          </TabsList>
+        ) : null}
         {isDirty ? <p className="mt-2 text-xs text-amber-600">有未保存的更改</p> : null}
         <TabsContent value="visual" className="pt-5">
           <FieldGroup>
@@ -491,63 +504,65 @@ export function TaskForm({
                 </div>
               </FieldGroup>
             </FieldSet>
-            <FieldSet>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <FieldLegend>执行步骤</FieldLegend>
-                <ToggleGroup
-                  value={[visualMode]}
-                  onValueChange={(values) => values[0] && setVisualMode(values[0])}
-                >
-                  <ToggleGroupItem value="edit">编辑</ToggleGroupItem>
-                  <ToggleGroupItem value="preview">预览</ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-              {visualMode === "edit" ? (
-                <TaskWorkflowEditor
-                  steps={definition.steps}
-                  run={run}
-                  onChange={(steps) => updateDefinition({ ...definition, steps })}
-                />
-              ) : (
-                <div className="rounded-xl border bg-muted/20 p-4">
-                  <div className="mb-4 flex items-center gap-2 text-sm font-medium">
-                    <span className="size-2 rounded-full bg-primary" />
-                    预计执行顺序
-                  </div>
-                  <ol className="flex flex-col gap-3">
-                    {definition.steps.map((step, index) => (
-                      <li
-                        key={JSON.stringify(step)}
-                        className="flex items-start gap-3 rounded-lg border bg-card p-3"
-                      >
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                          {index + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="font-medium">{String(step.type ?? "未知步骤")}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {step.type === "send_message"
-                              ? String(step.text || "待填写消息文本")
-                              : step.type === "wait_message"
-                                ? "等待匹配消息或超时"
-                                : step.type === "click_button"
-                                  ? "点击当前消息中的按钮"
-                                  : "请使用 YAML 高级模式配置"}
-                          </p>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                  <p className="mt-4 text-xs text-muted-foreground">
-                    预览不会向 Telegram 发送消息。点击“{submitLabel}”后才会保存配置。
-                  </p>
+            {showWorkflow ? (
+              <FieldSet>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <FieldLegend>执行步骤</FieldLegend>
+                  <ToggleGroup
+                    value={[visualMode]}
+                    onValueChange={(values) => values[0] && setVisualMode(values[0])}
+                  >
+                    <ToggleGroupItem value="edit">编辑</ToggleGroupItem>
+                    <ToggleGroupItem value="preview">预览</ToggleGroupItem>
+                  </ToggleGroup>
                 </div>
-              )}
-              <FieldDescription>
-                支持 send_message、wait_message 和
-                click_button；桌面端横向排列，窄屏自动切换为纵向列表。
-              </FieldDescription>
-            </FieldSet>
+                {visualMode === "edit" ? (
+                  <TaskWorkflowEditor
+                    steps={definition.steps}
+                    run={run}
+                    onChange={(steps) => updateDefinition({ ...definition, steps })}
+                  />
+                ) : (
+                  <div className="rounded-xl border bg-muted/20 p-4">
+                    <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+                      <span className="size-2 rounded-full bg-primary" />
+                      预计执行顺序
+                    </div>
+                    <ol className="flex flex-col gap-3">
+                      {definition.steps.map((step, index) => (
+                        <li
+                          key={JSON.stringify(step)}
+                          className="flex items-start gap-3 rounded-lg border bg-card p-3"
+                        >
+                          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                            {index + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-medium">{String(step.type ?? "未知步骤")}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {step.type === "send_message"
+                                ? String(step.text || "待填写消息文本")
+                                : step.type === "wait_message"
+                                  ? "等待匹配消息或超时"
+                                  : step.type === "click_button"
+                                    ? "点击当前消息中的按钮"
+                                    : "请使用 YAML 高级模式配置"}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="mt-4 text-xs text-muted-foreground">
+                      预览不会向 Telegram 发送消息。点击“{submitLabel}”后才会保存配置。
+                    </p>
+                  </div>
+                )}
+                <FieldDescription>
+                  支持 send_message、wait_message 和
+                  click_button；桌面端横向排列，窄屏自动切换为纵向列表。
+                </FieldDescription>
+              </FieldSet>
+            ) : null}
             <FieldSet>
               <FieldLegend>通知</FieldLegend>
               <FieldGroup className="flex-row">
@@ -616,21 +631,23 @@ export function TaskForm({
             </FieldSet>
           </FieldGroup>
         </TabsContent>
-        <TabsContent value="yaml" className="pt-5">
-          <Field>
-            <FieldLabel htmlFor="task-yaml">TaskDefinition YAML</FieldLabel>
-            <Textarea
-              id="task-yaml"
-              className="min-h-[32rem] font-mono text-xs"
-              value={yamlText}
-              onChange={(event) => {
-                setYamlText(event.target.value);
-                setError(null);
-              }}
-            />
-            <FieldDescription>保存前会经过与 CLI 相同的后端模型校验。</FieldDescription>
-          </Field>
-        </TabsContent>
+        {showWorkflow ? (
+          <TabsContent value="yaml" className="pt-5">
+            <Field>
+              <FieldLabel htmlFor="task-yaml">TaskDefinition YAML</FieldLabel>
+              <Textarea
+                id="task-yaml"
+                className="min-h-[32rem] font-mono text-xs"
+                value={yamlText}
+                onChange={(event) => {
+                  setYamlText(event.target.value);
+                  setError(null);
+                }}
+              />
+              <FieldDescription>保存前会经过与 CLI 相同的后端模型校验。</FieldDescription>
+            </Field>
+          </TabsContent>
+        ) : null}
       </Tabs>
       {error ? (
         <Alert variant="destructive">
@@ -640,23 +657,35 @@ export function TaskForm({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="flex justify-end gap-2">
-        {onTest ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isSubmitting || isTesting}
-            onClick={(event) => void handleTest(event)}
-          >
-            {isTesting ? <Spinner data-icon="inline-start" /> : null}
-            测试工作流
+      {!hideFooter ? (
+        <div className={cn("flex justify-end gap-2", footerClassName)}>
+          {onCancel ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isSubmitting || isTesting}
+            >
+              取消
+            </Button>
+          ) : null}
+          {onTest ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting || isTesting}
+              onClick={(event) => void handleTest(event)}
+            >
+              {isTesting ? <Spinner data-icon="inline-start" /> : null}
+              测试工作流
+            </Button>
+          ) : null}
+          <Button type="submit" disabled={isSubmitting || isTesting}>
+            {isSubmitting ? <Spinner data-icon="inline-start" /> : null}
+            {submitLabel}
           </Button>
-        ) : null}
-        <Button type="submit" disabled={isSubmitting || isTesting}>
-          {isSubmitting ? <Spinner data-icon="inline-start" /> : null}
-          {submitLabel}
-        </Button>
-      </div>
+        </div>
+      ) : null}
     </form>
   );
 }
