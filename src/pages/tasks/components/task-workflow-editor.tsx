@@ -126,19 +126,19 @@ const stepSummary = (step: WorkflowStep) => {
   if (step.type === "send_message")
     return typeof step.text === "string" && step.text ? step.text : "待填写消息文本";
   if (step.type === "wait_message") {
-    const matcher = step.match ?? step.success;
+    const matcher = step.success;
     return matcher
       ? `匹配 ${typeof matcher === "string" ? matcher : "高级规则"}`
       : "等待任意新消息";
   }
   if (step.type === "click_button") {
-    const callback = step.callback_data ?? step.callbackData;
+    const callback = step.callback_data;
     if (callback !== undefined) {
       return callback ? `定位 ${String(callback)}` : "待填写按钮定位条件";
     }
-    const textContains = step.text_contains ?? step.textContains;
-    if (textContains !== undefined) {
-      return textContains ? `定位 ${String(textContains)}` : "待填写按钮定位条件";
+    const containsText = step.text_contains;
+    if (containsText !== undefined) {
+      return containsText ? `定位 ${String(containsText)}` : "待填写按钮定位条件";
     }
     if (step.text !== undefined) {
       return step.text ? `定位 ${String(step.text)}` : "待填写按钮定位条件";
@@ -392,11 +392,6 @@ function makeStep(type: string): WorkflowStep {
   return { type };
 }
 
-const BUTTON_FIELD_ALIASES: Record<string, string> = {
-  text_contains: "textContains",
-  callback_data: "callbackData",
-};
-
 function updateButtonField(
   step: WorkflowStep,
   onChange: (step: WorkflowStep) => void,
@@ -404,8 +399,6 @@ function updateButtonField(
   value: unknown,
 ) {
   const next = { ...step };
-  const alias = BUTTON_FIELD_ALIASES[field];
-  if (alias) delete next[alias];
   if (value === undefined) delete next[field];
   else next[field] = value;
   onChange(next);
@@ -592,20 +585,16 @@ function StepFields({
     const buttonMode =
       step.callback_data !== undefined
         ? "callback"
-        : step.callbackData !== undefined
-          ? "callback"
-          : step.text_contains !== undefined || step.textContains !== undefined
-            ? "contains"
-            : step.text !== undefined
-              ? "exact"
-              : "position";
+        : step.text_contains !== undefined
+          ? "contains"
+          : step.text !== undefined
+            ? "exact"
+            : "position";
     const changeButtonMode = (mode: string) => {
       const {
         text: _text,
-        text_contains: _textContains,
-        textContains: _textContainsAlias,
-        callback_data: _callbackData,
-        callbackData: _callbackDataAlias,
+        text_contains: _containsText,
+        callback_data: _callback,
         row: _row,
         column: _column,
         ...rest
@@ -650,9 +639,7 @@ function StepFields({
             <Input
               id="button-text"
               value={typeof step.text === "string" ? step.text : ""}
-              onChange={(event) =>
-                updateButtonField(step, onChange, "text", event.target.value || undefined)
-              }
+              onChange={(event) => updateButtonField(step, onChange, "text", event.target.value)}
               placeholder="例如：每日签到"
             />
             <FieldDescription>优先精确匹配；没有精确结果时后端允许唯一子串匹配。</FieldDescription>
@@ -663,15 +650,9 @@ function StepFields({
             <FieldLabel htmlFor="button-contains">按钮文字</FieldLabel>
             <Input
               id="button-contains"
-              value={
-                typeof step.text_contains === "string"
-                  ? step.text_contains
-                  : typeof step.textContains === "string"
-                    ? step.textContains
-                    : ""
-              }
+              value={typeof step.text_contains === "string" ? step.text_contains : ""}
               onChange={(event) =>
-                updateButtonField(step, onChange, "text_contains", event.target.value || undefined)
+                updateButtonField(step, onChange, "text_contains", event.target.value)
               }
               placeholder="例如：签到"
             />
@@ -683,15 +664,9 @@ function StepFields({
             <FieldLabel htmlFor="button-callback">Callback data（回调数据）</FieldLabel>
             <Input
               id="button-callback"
-              value={
-                typeof step.callback_data === "string"
-                  ? step.callback_data
-                  : typeof step.callbackData === "string"
-                    ? step.callbackData
-                    : ""
-              }
+              value={typeof step.callback_data === "string" ? step.callback_data : ""}
               onChange={(event) =>
-                updateButtonField(step, onChange, "callback_data", event.target.value || undefined)
+                updateButtonField(step, onChange, "callback_data", event.target.value)
               }
               placeholder="例如：checkin_today"
             />

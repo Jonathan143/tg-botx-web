@@ -71,9 +71,7 @@ function getNextVersion(currentVersion, spec) {
 
   const explicitVersion = spec.replace(/^v/, "");
   if (!semverPattern.test(explicitVersion)) {
-    throw new Error(
-      `版本参数无效：${spec}。请使用 major、minor、patch 或完整的 semver 版本号。`,
-    );
+    throw new Error(`版本参数无效：${spec}。请使用 major、minor、patch 或完整的 semver 版本号。`);
   }
 
   return explicitVersion;

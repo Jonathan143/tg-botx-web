@@ -44,12 +44,11 @@ export type TaskDefinition = {
   account: string;
   target: string;
   schedule: ScheduleDefinition;
-  retry: { maxAttempts: number; backoffSeconds: number[] };
+  retry: { max_attempts: number; backoff_seconds: number[] };
   steps: Array<Record<string, unknown>>;
   notifications: { failure: boolean; success: boolean };
-  outputBotResponse?: boolean;
-  logBotResponse?: boolean | null;
-  notifyBotResponse?: boolean | null;
+  log_bot_response?: boolean | null;
+  notify_bot_response?: boolean | null;
 };
 
 export type TaskStepStatus = {

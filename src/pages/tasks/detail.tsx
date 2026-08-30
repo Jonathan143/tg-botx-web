@@ -29,11 +29,11 @@ function definitionFromTask(task: Task): TaskDefinition {
       account: task.account,
       target: task.target,
       schedule: task.schedule,
-      retry: { maxAttempts: 3, backoffSeconds: [30, 60, 120] },
+      retry: { max_attempts: 3, backoff_seconds: [30, 60, 120] },
       steps: [],
       notifications: { failure: true, success: false },
-      logBotResponse: false,
-      notifyBotResponse: false,
+      log_bot_response: false,
+      notify_bot_response: false,
     }
   );
 }

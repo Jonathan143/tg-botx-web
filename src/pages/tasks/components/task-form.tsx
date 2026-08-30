@@ -38,35 +38,12 @@ const defaultDefinition: TaskDefinition = {
   account: "",
   target: "",
   schedule: { type: "fixed", timezone: "Asia/Shanghai", time: "08:00" },
-  retry: { maxAttempts: 3, backoffSeconds: [30, 60, 120] },
+  retry: { max_attempts: 3, backoff_seconds: [30, 60, 120] },
   steps: [{ type: "send_message", text: "/checkin" }],
   notifications: { failure: true, success: false },
-  outputBotResponse: false,
-  logBotResponse: false,
-  notifyBotResponse: false,
+  log_bot_response: false,
+  notify_bot_response: false,
 };
-
-const STEP_FIELD_ALIASES: Array<[string, string]> = [
-  ["timeout_seconds", "timeoutSeconds"],
-  ["text_contains", "textContains"],
-  ["callback_data", "callbackData"],
-];
-
-function normalizeDefinitionForComparison(definition: TaskDefinition): TaskDefinition {
-  return {
-    ...definition,
-    steps: definition.steps.map((step) => {
-      const normalized = { ...step };
-      for (const [canonical, alias] of STEP_FIELD_ALIASES) {
-        if (normalized[canonical] === undefined && normalized[alias] !== undefined) {
-          normalized[canonical] = normalized[alias];
-        }
-        delete normalized[alias];
-      }
-      return normalized;
-    }),
-  };
-}
 
 function stableSerialize(value: unknown): string {
   if (value === null) return "null";
@@ -84,10 +61,7 @@ function stableSerialize(value: unknown): string {
 }
 
 function definitionsEqual(first: TaskDefinition, second: TaskDefinition): boolean {
-  return (
-    stableSerialize(normalizeDefinitionForComparison(first)) ===
-    stableSerialize(normalizeDefinitionForComparison(second))
-  );
+  return stableSerialize(first) === stableSerialize(second);
 }
 
 const commonTimezones = [
@@ -233,8 +207,8 @@ export function TaskForm({
     const next: TaskDefinition = {
       ...parsed,
       retry: {
-        maxAttempts: parsed.retry?.maxAttempts ?? 3,
-        backoffSeconds: parsed.retry?.backoffSeconds ?? [30, 60, 120],
+        max_attempts: parsed.retry?.max_attempts ?? 3,
+        backoff_seconds: parsed.retry?.backoff_seconds ?? [30, 60, 120],
       },
     };
     if (!next.name?.trim() || !next.account?.trim() || !next.target?.trim()) {
@@ -244,15 +218,15 @@ export function TaskForm({
       throw new Error("至少需要配置一个执行步骤。");
     }
     if (
-      !Number.isInteger(next.retry.maxAttempts) ||
-      next.retry.maxAttempts < 1 ||
-      next.retry.maxAttempts > 10
+      !Number.isInteger(next.retry.max_attempts) ||
+      next.retry.max_attempts < 1 ||
+      next.retry.max_attempts > 10
     ) {
       throw new Error("最大尝试次数必须是 1–10 之间的整数。");
     }
     if (
-      !Array.isArray(next.retry.backoffSeconds) ||
-      next.retry.backoffSeconds.some((value) => !Number.isInteger(value) || value < 0)
+      !Array.isArray(next.retry.backoff_seconds) ||
+      next.retry.backoff_seconds.some((value) => !Number.isInteger(value) || value < 0)
     ) {
       throw new Error("重试等待时间必须是非负整数列表。");
     }
@@ -471,13 +445,13 @@ export function TaskForm({
                       min={1}
                       max={10}
                       step={1}
-                      value={definition.retry.maxAttempts}
+                      value={definition.retry.max_attempts}
                       onChange={(event) =>
                         updateDefinition({
                           ...definition,
                           retry: {
                             ...definition.retry,
-                            maxAttempts: Number(event.target.value),
+                            max_attempts: Number(event.target.value),
                           },
                         })
                       }
@@ -488,13 +462,13 @@ export function TaskForm({
                     <FieldLabel htmlFor="retry-backoff-seconds">重试等待时间（秒）</FieldLabel>
                     <Input
                       id="retry-backoff-seconds"
-                      value={definition.retry.backoffSeconds.join(", ")}
+                      value={definition.retry.backoff_seconds.join(", ")}
                       onChange={(event) =>
                         updateDefinition({
                           ...definition,
                           retry: {
                             ...definition.retry,
-                            backoffSeconds: event.target.value
+                            backoff_seconds: event.target.value
                               .split(",")
                               .map((value) => value.trim())
                               .filter(Boolean)
@@ -614,9 +588,9 @@ export function TaskForm({
                   </FieldContent>
                   <Switch
                     id="log-bot-response"
-                    checked={definition.logBotResponse ?? false}
+                    checked={definition.log_bot_response ?? false}
                     onCheckedChange={(checked) =>
-                      updateDefinition({ ...definition, logBotResponse: checked })
+                      updateDefinition({ ...definition, log_bot_response: checked })
                     }
                   />
                 </Field>
@@ -629,9 +603,9 @@ export function TaskForm({
                   </FieldContent>
                   <Switch
                     id="notify-bot-response"
-                    checked={definition.notifyBotResponse ?? false}
+                    checked={definition.notify_bot_response ?? false}
                     onCheckedChange={(checked) =>
-                      updateDefinition({ ...definition, notifyBotResponse: checked })
+                      updateDefinition({ ...definition, notify_bot_response: checked })
                     }
                   />
                 </Field>
