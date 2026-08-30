@@ -1,0 +1,81 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and release ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Package build output
+        id: package
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Git tags may contain slashes (for example, release/v1.2.0),
+          # which cannot be used directly in an archive filename.
+          safe_tag="${RELEASE_TAG//\//-}"
+          asset_base="tg-botx-web-${safe_tag}"
+          tarball="${asset_base}.tar.gz"
+          zipfile="${asset_base}.zip"
+          checksums="${asset_base}.sha256"
+
+          tar -czf "$tarball" -C dist .
+          (cd dist && zip -qr "../$zipfile" .)
+          sha256sum "$tarball" "$zipfile" > "$checksums"
+
+          echo "asset_base=$asset_base" >> "$GITHUB_OUTPUT"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "zipfile=$zipfile" >> "$GITHUB_OUTPUT"
+          echo "checksums=$checksums" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.asset_base }}
+          path: |
+            dist
+            ${{ steps.package.outputs.tarball }}
+            ${{ steps.package.outputs.zipfile }}
+            ${{ steps.package.outputs.checksums }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            ${{ steps.package.outputs.tarball }}
+            ${{ steps.package.outputs.zipfile }}
+            ${{ steps.package.outputs.checksums }}
