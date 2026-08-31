@@ -13,6 +13,7 @@ const TaskDetailPage = lazy(() => import("@/pages/tasks/detail"));
 const RunsPage = lazy(() => import("@/pages/runs"));
 const RunDetailPage = lazy(() => import("@/pages/runs/detail"));
 const AccountsPage = lazy(() => import("@/pages/accounts"));
+const AdminBotPage = lazy(() => import("@/pages/admin-bot"));
 const LogsPage = lazy(() => import("@/pages/logs"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 
@@ -52,6 +53,7 @@ export function App() {
           <Route path="runs" element={<RunsPage />} />
           <Route path="runs/:runId" element={<RunDetailPage />} />
           <Route path="accounts" element={<AccountsPage />} />
+          <Route path="admin-bot" element={<AdminBotPage />} />
           <Route path="logs" element={<LogsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

@@ -8,6 +8,7 @@ import {
   LogOutIcon,
   MoonIcon,
   SettingsIcon,
+  ShieldCheckIcon,
   SunIcon,
 } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -45,6 +46,7 @@ const navigation = [
   { path: "/tasks", label: "任务", icon: ClipboardListIcon },
   { path: "/runs", label: "执行记录", icon: ActivityIcon },
   { path: "/accounts", label: "Telegram 账号", icon: BotIcon },
+  { path: "/admin-bot", label: "Telegram 管理 Bot", icon: ShieldCheckIcon },
   { path: "/logs", label: "运行日志", icon: FileTextIcon },
   { path: "/settings", label: "设置", icon: SettingsIcon },
 ];

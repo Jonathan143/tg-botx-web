@@ -202,6 +202,52 @@ export type LogEntry = {
 
 export type SettingsResponse = Record<string, string | number | boolean | null>;
 
+export type BotBindingCode = {
+  id: string;
+  hint: string;
+  status: "active" | "used" | "revoked" | "expired" | string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+  revokedAt: string | null;
+};
+
+export type BotBinding = {
+  id: string;
+  userId: number;
+  chatId: number;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  boundAt: string;
+};
+
+export type BotBindingsResponse = {
+  enabled: boolean;
+  configured: boolean;
+  status: {
+    enabled: boolean;
+    configured: boolean;
+    running: boolean;
+    health: string;
+    lastPollAt: string | null;
+    lastError: string | null;
+  };
+  codes: BotBindingCode[];
+  bindings: BotBinding[];
+};
+
+export type BotCommand = {
+  command: string;
+  description: string;
+  enabled: boolean;
+  syncWarning?: string;
+};
+
+export type BotCommandsResponse = {
+  commands: BotCommand[];
+};
+
 export type SessionResponse = {
   authenticated: true;
   csrfToken: string;
