@@ -32,7 +32,7 @@ export default function UnlockPage() {
           </div>
           <div className="flex flex-col gap-2">
             <h1 className="font-heading text-4xl font-semibold tracking-tight">
-              TG Bot 管理控制台
+              TG Botx 管理控制台
             </h1>
             <p className="text-base leading-relaxed text-muted-foreground">
               集中查看调度健康状态、管理签到任务、追踪执行记录，并安全维护 Telegram 账号。

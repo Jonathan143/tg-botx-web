@@ -72,12 +72,12 @@ function AppSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" tooltip="TG Bot 管理后台">
+            <SidebarMenuButton size="lg" tooltip="TG Botx 管理后台">
               <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                 <BotIcon />
               </span>
               <span className="flex min-w-0 flex-col text-left group-data-[collapsible=icon]:hidden">
-                <span className="truncate font-semibold">TG Bot</span>
+                <span className="truncate font-semibold">TG Botx</span>
                 <span className="truncate text-xs text-muted-foreground">管理控制台</span>
               </span>
             </SidebarMenuButton>
