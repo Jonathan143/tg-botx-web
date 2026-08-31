@@ -12,15 +12,16 @@ import { LogViewer } from "./components/log-viewer";
 
 export default function LogsPage() {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [queryText, setQueryText] = useState("");
   const [level, setLevel] = useState("all");
   const [live, setLive] = useState(false);
   const [liveEntries, setLiveEntries] = useState<LogEntry[]>([]);
   const deferredQuery = useDeferredValue(queryText);
   const logsQuery = useQuery({
-    queryKey: ["logs", { page, level, query: deferredQuery }],
+    queryKey: ["logs", { page, pageSize, level, query: deferredQuery }],
     queryFn: () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: "25" });
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (level !== "all") params.set("level", level);
       if (deferredQuery) params.set("query", deferredQuery);
       return apiRequest<Paginated<LogEntry>>(`/api/logs?${params}`);
@@ -93,6 +94,10 @@ export default function LogsPage() {
               pageSize={logsQuery.data.pageSize}
               total={logsQuery.data.total}
               onPageChange={setPage}
+              onPageSizeChange={(value) => {
+                setPageSize(value);
+                setPage(1);
+              }}
             />
           ) : null}
         </div>

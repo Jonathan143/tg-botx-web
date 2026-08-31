@@ -27,7 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { apiRequest, jsonBody, ApiError } from "@/lib/api/client";
+import { ApiError, apiRequest, jsonBody } from "@/lib/api/client";
 import type {
   Account,
   MessageProbeResponse,
@@ -35,8 +35,9 @@ import type {
   TaskRunProgress,
 } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
-import { TaskWorkflowEditor } from "./task-workflow-editor";
+import { createWorkflowStep, normalizeConditionStep } from "@/lib/workflow-condition";
 import { TaskTargetPicker } from "./task-target-picker";
+import { TaskWorkflowEditor } from "./task-workflow-editor";
 
 const defaultDefinition: TaskDefinition = {
   name: "",
@@ -44,9 +45,10 @@ const defaultDefinition: TaskDefinition = {
   target: "",
   schedule: { type: "fixed", timezone: "Asia/Shanghai", time: "08:00" },
   retry: { max_attempts: 3, backoff_seconds: [30, 60, 120] },
-  steps: [{ type: "send_message", text: "/checkin" }],
+  steps: [{ ...createWorkflowStep("send_message"), text: "/start" }],
   notifications: { failure: true, success: false },
   log_bot_response: false,
+  log_condition_values: false,
   notify_bot_response: false,
 };
 
@@ -610,7 +612,7 @@ export function TaskForm({
                     <ol className="flex flex-col gap-3">
                       {definition.steps.map((step, index) => (
                         <li
-                          key={JSON.stringify(step)}
+                          key={step.node_id ?? `${step.type}-${index}`}
                           className="flex items-start gap-3 rounded-lg border bg-card p-3"
                         >
                           <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
@@ -625,7 +627,12 @@ export function TaskForm({
                                   ? "等待匹配消息或超时"
                                   : step.type === "click_button"
                                     ? "点击当前消息中的按钮"
-                                    : "请使用 YAML 高级模式配置"}
+                                    : step.type === "condition"
+                                      ? (() => {
+                                          const condition = normalizeConditionStep(step);
+                                          return `提取 ${condition.extracts.length} 个变量，按 ${condition.branches.length} 个 if / else 分支执行`;
+                                        })()
+                                      : "请使用 YAML 高级模式配置"}
                             </p>
                           </div>
                         </li>
@@ -637,8 +644,8 @@ export function TaskForm({
                   </div>
                 )}
                 <FieldDescription>
-                  支持 send_message、wait_message 和
-                  click_button；桌面端横向排列，窄屏自动切换为纵向列表。
+                  支持发送、等待、点击与条件判断节点；条件节点在全屏工作区中配置 if / else
+                  分支，桌面端横向排列，窄屏自动切换为纵向列表。
                 </FieldDescription>
               </FieldSet>
             ) : null}
@@ -688,6 +695,21 @@ export function TaskForm({
                     checked={definition.log_bot_response ?? false}
                     onCheckedChange={(checked) =>
                       updateDefinition({ ...definition, log_bot_response: checked })
+                    }
+                  />
+                </Field>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="log-condition-values">记录条件变量值</FieldLabel>
+                    <FieldDescription>
+                      将条件节点提取到的变量值写入运行状态；默认关闭，变量可能包含敏感信息。
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    id="log-condition-values"
+                    checked={definition.log_condition_values ?? false}
+                    onCheckedChange={(checked) =>
+                      updateDefinition({ ...definition, log_condition_values: checked })
                     }
                   />
                 </Field>

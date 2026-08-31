@@ -19,6 +19,7 @@ import {
   ChevronUp,
   CircleAlert,
   Flag,
+  GitBranch,
   GripVertical,
   type LucideIcon,
   MessageCircle,
@@ -57,10 +58,21 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import type { TaskRunLog, TaskRunProgress, TaskStepStatus } from "@/lib/api/types";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import {
+  createWorkflowStep,
+  ensureWorkflowNodeIds,
+  normalizeConditionStep,
+  type WorkflowStep,
+  type WorkflowVariableDefinition,
+  variablesBeforeStep,
+  waitBeforeStep,
+} from "@/lib/workflow-condition";
+
+import { ConditionWorkspace } from "./condition-workspace";
 
 import "@xyflow/react/dist/style.css";
 
-export type WorkflowStep = Record<string, unknown> & { type?: string };
+export type { WorkflowStep } from "@/lib/workflow-condition";
 
 type WorkflowNodeData = {
   index: number;
@@ -110,6 +122,12 @@ const STEP_TYPES: Array<{
     description: "点击当前消息中的按钮",
     icon: MousePointerClick,
   },
+  {
+    value: "condition",
+    label: "条件判断",
+    description: "提取变量并按 if / else 分支执行",
+    icon: GitBranch,
+  },
 ];
 
 const stepIcon = (step: WorkflowStep) =>
@@ -149,6 +167,11 @@ const stepSummary = (step: WorkflowStep) => {
       return `定位 行 ${String(step.row ?? "?")} · 列 ${String(step.column ?? "?")}`;
     }
     return "待填写按钮定位条件";
+  }
+  if (step.type === "condition") {
+    const condition = normalizeConditionStep(step);
+    const ifCount = condition.branches.filter((branch) => branch.kind !== "else").length;
+    return `${condition.extracts.length} 个变量 · ${ifCount} 个判断分支 · 含 else`;
   }
   return "请切换到 YAML 高级模式编辑";
 };
@@ -479,10 +502,7 @@ const nodeTypes = { workflow: WorkflowNode, display: DisplayNode };
 const edgeTypes = { workflow: WorkflowEdge };
 
 function makeStep(type: string): WorkflowStep {
-  if (type === "send_message") return { type, text: "" };
-  if (type === "wait_message") return { type, timeout_seconds: 60 };
-  if (type === "click_button") return { type, text: "" };
-  return { type };
+  return createWorkflowStep(type);
 }
 
 function updateButtonField(
@@ -808,18 +828,96 @@ export function TaskWorkflowEditor({
   runLogs,
   onChange,
   readOnly = false,
+  onConditionSelect,
+  inheritedVariables = [],
+  inheritedWait = false,
+  pathPrefix,
 }: {
   steps: WorkflowStep[];
   run?: TaskRunProgress | null;
   runLogs?: TaskRunLog[];
   onChange: (steps: WorkflowStep[]) => void;
   readOnly?: boolean;
+  onConditionSelect?: (stepIndex: number) => void;
+  inheritedVariables?: WorkflowVariableDefinition[];
+  inheritedWait?: boolean;
+  pathPrefix?: string;
 }) {
   const isMobile = useIsMobile();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const emitChange = useCallback(
+    (next: WorkflowStep[]) => onChange(ensureWorkflowNodeIds(next)),
+    [onChange],
+  );
   const stepStatusByIndex = useMemo(
-    () => new Map(run?.stepStatuses.map((item) => [item.index, item]) ?? []),
+    () =>
+      new Map(
+        run?.stepStatuses.flatMap((item) =>
+          typeof item.index === "number" ? ([[item.index, item]] as const) : [],
+        ) ?? [],
+      ),
     [run?.stepStatuses],
+  );
+  const stepStatusByNodeId = useMemo(
+    () =>
+      new Map(
+        run?.stepStatuses.flatMap((item) =>
+          item.nodeId ? ([[item.nodeId, item]] as const) : [],
+        ) ?? [],
+      ),
+    [run?.stepStatuses],
+  );
+  const stepStatusByPath = useMemo(
+    () =>
+      new Map(
+        run?.stepStatuses.flatMap((item) =>
+          item.stepPath ? ([[item.stepPath, item]] as const) : [],
+        ) ?? [],
+      ),
+    [run?.stepStatuses],
+  );
+  const statusForStep = useCallback(
+    (step: WorkflowStep, index: number) => {
+      const stepPath = pathPrefix ? `${pathPrefix}[${index}]` : undefined;
+      return (
+        (step.node_id ? stepStatusByNodeId.get(step.node_id) : undefined) ??
+        (stepPath ? stepStatusByPath.get(stepPath) : undefined) ??
+        (!pathPrefix ? stepStatusByIndex.get(index) : undefined)
+      );
+    },
+    [pathPrefix, stepStatusByIndex, stepStatusByNodeId, stepStatusByPath],
+  );
+  const logsForStep = useCallback(
+    (step: WorkflowStep, index: number) =>
+      (runLogs ?? run?.logs ?? []).filter((log) => {
+        if (step.node_id && log.nodeId) return log.nodeId === step.node_id;
+        const stepPath = pathPrefix ? `${pathPrefix}[${index}]` : undefined;
+        if (stepPath && log.stepPath) return log.stepPath === stepPath;
+        return !pathPrefix && log.stepIndex === index;
+      }),
+    [pathPrefix, run?.logs, runLogs],
+  );
+  const selectStep = useCallback(
+    (index: number) => {
+      if (steps[index]?.type === "condition" && onConditionSelect) {
+        onConditionSelect(index);
+        return;
+      }
+      setSelectedIndex(index);
+    },
+    [onConditionSelect, steps],
+  );
+  const selectedVariables = useMemo(
+    () =>
+      selectedIndex === null
+        ? inheritedVariables
+        : variablesBeforeStep(steps, selectedIndex, inheritedVariables),
+    [inheritedVariables, selectedIndex, steps],
+  );
+  const selectedHasWait = useMemo(
+    () =>
+      selectedIndex === null ? inheritedWait : waitBeforeStep(steps, selectedIndex, inheritedWait),
+    [inheritedWait, selectedIndex, steps],
   );
   const move = useCallback(
     (index: number, directionValue: -1 | 1) => {
@@ -827,22 +925,22 @@ export function TaskWorkflowEditor({
       if (nextIndex < 0 || nextIndex >= steps.length) return;
       const next = [...steps];
       [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      onChange(next);
+      emitChange(next);
     },
-    [onChange, steps],
+    [emitChange, steps],
   );
   const remove = useCallback(
-    (index: number) => onChange(steps.filter((_, stepIndex) => stepIndex !== index)),
-    [onChange, steps],
+    (index: number) => emitChange(steps.filter((_, stepIndex) => stepIndex !== index)),
+    [emitChange, steps],
   );
   const add = useCallback(
-    (type: string) => onChange([...steps, makeStep(type)]),
-    [onChange, steps],
+    (type: string) => emitChange([...steps, makeStep(type)]),
+    [emitChange, steps],
   );
   const insert = useCallback(
     (index: number, type: string) =>
-      onChange([...steps.slice(0, index), makeStep(type), ...steps.slice(index)]),
-    [onChange, steps],
+      emitChange([...steps.slice(0, index), makeStep(type), ...steps.slice(index)]),
+    [emitChange, steps],
   );
   const nodes = useMemo<WorkflowCanvasNode[]>(() => {
     const gap = isMobile ? 150 : 300;
@@ -857,7 +955,7 @@ export function TaskWorkflowEditor({
         draggable: false,
       },
       ...steps.map((step, index) => {
-        const stepStatus = stepStatusByIndex.get(index);
+        const stepStatus = statusForStep(step, index);
         return {
           id: `step-${index}`,
           type: "workflow" as const,
@@ -877,7 +975,7 @@ export function TaskWorkflowEditor({
             botResponse: stepStatus?.botResponse,
             botButtons: stepStatus?.botButtons,
             readOnly,
-            onSelect: setSelectedIndex,
+            onSelect: selectStep,
             onMove: move,
             onDelete: remove,
           },
@@ -895,7 +993,7 @@ export function TaskWorkflowEditor({
         draggable: false,
       },
     ];
-  }, [isMobile, move, readOnly, remove, selectedIndex, stepStatusByIndex, steps]);
+  }, [isMobile, move, readOnly, remove, selectedIndex, selectStep, statusForStep, steps]);
   const edges = [
     { source: "start", target: steps.length > 0 ? "step-0" : "end", insertIndex: 0 },
     ...steps.slice(0, -1).map((_, index) => ({
@@ -922,7 +1020,7 @@ export function TaskWorkflowEditor({
     const next = [...steps];
     const [item] = next.splice(node.data.index, 1);
     next.splice(nextIndex, 0, item);
-    onChange(next);
+    emitChange(next);
   };
   return (
     <div className="flex flex-col gap-4">
@@ -958,18 +1056,18 @@ export function TaskWorkflowEditor({
             </CardContent>
           </Card>
           {steps.map((step, index) => {
-            const stepStatus = stepStatusByIndex.get(index);
+            const stepStatus = statusForStep(step, index);
             const durationLabel = formatStepDuration(stepStatus?.durationMs);
-            const stepLogs = (runLogs ?? run?.logs ?? []).filter((log) => log.stepIndex === index);
+            const stepLogs = logsForStep(step, index);
             return (
               <Card
-                key={JSON.stringify(step)}
+                key={step.node_id ?? `${step.type}-${index}`}
                 className="cursor-pointer transition-colors hover:bg-muted/40"
-                onClick={() => setSelectedIndex(index)}
+                onClick={() => selectStep(index)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    setSelectedIndex(index);
+                    selectStep(index);
                   }
                 }}
                 role="button"
@@ -1018,21 +1116,60 @@ export function TaskWorkflowEditor({
       <StepEditorSheet
         step={selectedIndex === null ? null : (steps[selectedIndex] ?? null)}
         index={selectedIndex ?? 0}
-        open={selectedIndex !== null}
+        open={selectedIndex !== null && steps[selectedIndex]?.type !== "condition"}
         readOnly={readOnly}
-        runStatus={selectedIndex === null ? undefined : stepStatusByIndex.get(selectedIndex)}
+        runStatus={
+          selectedIndex === null || !steps[selectedIndex]
+            ? undefined
+            : statusForStep(steps[selectedIndex], selectedIndex)
+        }
         runLogs={
-          selectedIndex === null
+          selectedIndex === null || !steps[selectedIndex]
             ? []
-            : (runLogs ?? run?.logs ?? []).filter((log) => log.stepIndex === selectedIndex)
+            : logsForStep(steps[selectedIndex], selectedIndex)
         }
         onOpenChange={(open) => {
           if (!open) setSelectedIndex(null);
         }}
         onChange={(next) => {
           if (selectedIndex !== null)
-            onChange(steps.map((item, itemIndex) => (itemIndex === selectedIndex ? next : item)));
+            emitChange(steps.map((item, itemIndex) => (itemIndex === selectedIndex ? next : item)));
         }}
+      />
+      <ConditionWorkspace
+        step={selectedIndex === null ? null : (steps[selectedIndex] ?? null)}
+        open={selectedIndex !== null && steps[selectedIndex]?.type === "condition"}
+        readOnly={readOnly}
+        run={run}
+        runLogs={runLogs}
+        availableVariables={selectedVariables}
+        hasPriorWait={selectedHasWait}
+        runStatus={
+          selectedIndex === null || !steps[selectedIndex]
+            ? undefined
+            : statusForStep(steps[selectedIndex], selectedIndex)
+        }
+        onOpenChange={(open) => {
+          if (!open) setSelectedIndex(null);
+        }}
+        onApply={(next) => {
+          if (selectedIndex !== null) {
+            emitChange(steps.map((item, itemIndex) => (itemIndex === selectedIndex ? next : item)));
+          }
+        }}
+        renderSequence={(props) => (
+          <TaskWorkflowEditor
+            steps={props.steps}
+            onChange={props.onChange}
+            readOnly={props.readOnly}
+            run={props.run}
+            runLogs={props.runLogs}
+            onConditionSelect={props.onConditionSelect}
+            inheritedVariables={props.inheritedVariables}
+            inheritedWait={props.inheritedWait}
+            pathPrefix={props.pathPrefix}
+          />
+        )}
       />
     </div>
   );

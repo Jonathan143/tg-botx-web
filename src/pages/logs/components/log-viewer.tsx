@@ -18,7 +18,7 @@ export function LogViewer({ entries }: { entries: LogEntry[] }) {
               className="whitespace-nowrap text-muted-foreground"
               dateTime={entry.timestamp ?? undefined}
             >
-              {formatDateTime(entry.timestamp)}
+              {formatDateTime(entry.timestamp?.replace(/,\d+/, ""))}
             </time>
             <StatusBadge status={entry.level?.toLowerCase()} />
             <div className="min-w-0">

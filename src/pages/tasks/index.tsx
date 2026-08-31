@@ -30,7 +30,6 @@ export default function TasksPage() {
       if (status === "archived") params.set("includeArchived", "true");
       return apiRequest<Paginated<Task>>(`/api/tasks?${params}`);
     },
-    refetchInterval: 30_000,
   });
   const toggleMutation = useMutation({
     mutationFn: (task: Task) =>

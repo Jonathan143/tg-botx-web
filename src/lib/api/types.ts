@@ -1,3 +1,5 @@
+import type { WorkflowStep } from "@/lib/workflow-condition";
+
 export type Paginated<T> = {
   items: T[];
   page: number;
@@ -45,14 +47,17 @@ export type TaskDefinition = {
   target: string;
   schedule: ScheduleDefinition;
   retry: { max_attempts: number; backoff_seconds: number[] };
-  steps: Array<Record<string, unknown>>;
+  steps: WorkflowStep[];
   notifications: { failure: boolean; success: boolean };
   log_bot_response?: boolean | null;
+  log_condition_values?: boolean | null;
   notify_bot_response?: boolean | null;
 };
 
 export type TaskStepStatus = {
-  index: number;
+  index?: number | null;
+  nodeId?: string | null;
+  stepPath?: string | null;
   status: "pending" | "running" | "success" | "failed" | "skipped";
   error?: string | null;
   botResponse?: string | null;
@@ -60,6 +65,14 @@ export type TaskStepStatus = {
   botButtons?: string[][] | null;
   /** Elapsed execution time for the node, in milliseconds. */
   durationMs?: number | null;
+  selectedBranch?: { index: number; kind: string; name?: string | null } | null;
+  conditionVariables?: Array<{
+    name: string;
+    valueType: string;
+    status: "success" | "failed";
+    value?: string | null;
+    error?: string | null;
+  }> | null;
 };
 
 export type TaskRunProgress = {
@@ -76,6 +89,8 @@ export type TaskRunLog = {
   level: string | null;
   message: string;
   stepIndex?: number | null;
+  nodeId?: string | null;
+  stepPath?: string | null;
 };
 
 export type Task = {
@@ -121,7 +136,7 @@ export type TaskRun = {
   runKind?: "published" | "test" | string;
   workflowVersion?: number | "main" | string | null;
   workflowVersionId?: string | null;
-  workflow?: (Partial<TaskDefinition> & { steps: Array<Record<string, unknown>> }) | null;
+  workflow?: (Partial<TaskDefinition> & { steps: WorkflowStep[] }) | null;
   workflowError?: string | null;
   progress?: TaskRunProgress | null;
 };
