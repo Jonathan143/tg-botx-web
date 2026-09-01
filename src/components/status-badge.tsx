@@ -31,6 +31,7 @@ const labels: Record<string, string> = {
   running: "运行中",
   pending: "等待中",
   cancelled: "已取消",
+  canceled: "已取消",
   enabled: "已启用",
   disabled: "已停用",
   archived: "已归档",
