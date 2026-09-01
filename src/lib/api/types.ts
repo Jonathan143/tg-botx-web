@@ -36,10 +36,18 @@ export type UpcomingTask = {
 export type ScheduleDefinition = {
   type: "fixed" | "random";
   timezone: string;
+  frequency?: "daily" | "every_n_days" | "weekly" | "monthly_dates";
+  start_date?: string | null;
+  end_date?: string | null;
+  interval_days?: number | null;
+  weekdays?: number[] | null;
+  month_days?: number[] | null;
   time?: string;
   start?: string;
   end?: string;
 };
+
+export type SchedulePreview = { items: string[]; timezone: string };
 
 export type TaskDefinition = {
   name: string;

@@ -71,10 +71,18 @@ export function TaskOverview({
   onSaveWorkflow?: () => void;
   onTestWorkflow?: () => void;
 }) {
-  const schedule =
-    task.schedule.type === "fixed"
-      ? `每天 ${task.schedule.time ?? "—"}`
-      : `每天 ${task.schedule.start ?? "—"}–${task.schedule.end ?? "—"} 随机`;
+  const frequency = task.schedule.frequency ?? "daily";
+  const frequencyLabel =
+    frequency === "every_n_days"
+      ? `每 ${task.schedule.interval_days ?? "—"} 天`
+      : frequency === "weekly"
+        ? `每周 ${(task.schedule.weekdays ?? []).map((day) => ["一", "二", "三", "四", "五", "六", "日"][day - 1]).join("、") || "—"}`
+        : frequency === "monthly_dates"
+          ? `每月 ${(task.schedule.month_days ?? []).join("、") || "—"} 号`
+          : "每天";
+  const schedule = task.schedule.type === "fixed"
+    ? `${frequencyLabel} ${task.schedule.time ?? "—"}`
+    : `${frequencyLabel} ${task.schedule.start ?? "—"}–${task.schedule.end ?? "—"} 随机`;
   const stepCount = definition.steps.length;
   const lastStatus = task.lastStatus?.toLowerCase();
   const isSuccessful = lastStatus === "success" || lastStatus === "completed";

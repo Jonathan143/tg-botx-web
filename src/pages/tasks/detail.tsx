@@ -185,6 +185,7 @@ export default function TaskDetailPage() {
               </DialogHeader>
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
                 <TaskForm
+                  taskId={taskId}
                   accounts={accounts}
                   accountsLoading={accountsQuery.isPending}
                   accountsError={accountsQuery.isError}

@@ -31,6 +31,7 @@ import { ApiError, apiRequest, jsonBody } from "@/lib/api/client";
 import type {
   Account,
   MessageProbeResponse,
+  SchedulePreview,
   TaskDefinition,
   TaskRunProgress,
 } from "@/lib/api/types";
@@ -43,7 +44,13 @@ const defaultDefinition: TaskDefinition = {
   name: "",
   account: "",
   target: "",
-  schedule: { type: "fixed", timezone: "Asia/Shanghai", time: "08:00" },
+  schedule: {
+    type: "fixed",
+    timezone: "Asia/Shanghai",
+    frequency: "daily",
+    start_date: new Date().toISOString().slice(0, 10),
+    time: "08:00",
+  },
   retry: { max_attempts: 3, backoff_seconds: [30, 60, 120] },
   steps: [{ ...createWorkflowStep("send_message"), text: "/start" }],
   notifications: { failure: true, success: false },
@@ -99,6 +106,7 @@ export function TaskForm({
   footerClassName,
   formId,
   hideFooter = false,
+  taskId,
 }: {
   initialValue?: TaskDefinition;
   accounts?: Account[];
@@ -115,6 +123,7 @@ export function TaskForm({
   footerClassName?: string;
   formId?: string;
   hideFooter?: boolean;
+  taskId?: string;
 }) {
   const initial = useMemo(() => initialValue ?? defaultDefinition, [initialValue]);
   const [definition, setDefinition] = useState<TaskDefinition>(initial);
@@ -126,6 +135,9 @@ export function TaskForm({
   const [probeResult, setProbeResult] = useState<MessageProbeResponse | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
   const [isProbing, setIsProbing] = useState(false);
+  const [preview, setPreview] = useState<SchedulePreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const isDirty = (() => {
     if (mode !== "yaml") return !definitionsEqual(definition, initial);
     try {
@@ -307,6 +319,24 @@ export function TaskForm({
       );
     } finally {
       setIsProbing(false);
+    }
+  };
+
+  const previewSchedule = async () => {
+    setIsPreviewing(true);
+    setPreviewError(null);
+    try {
+      const result = await apiRequest<SchedulePreview>(
+        taskId ? `/api/tasks/${taskId}/preview` : "/api/tasks/preview",
+        { method: "POST", body: jsonBody({ definition }) },
+      );
+      setPreview(result);
+    } catch (previewRequestError) {
+      setPreviewError(
+        previewRequestError instanceof Error ? previewRequestError.message : "预览失败，请检查调度配置。",
+      );
+    } finally {
+      setIsPreviewing(false);
     }
   };
 
@@ -530,6 +560,90 @@ export function TaskForm({
                     </>
                   )}
                 </div>
+                <div className="grid gap-5 md:grid-cols-3">
+                  <Field>
+                    <FieldLabel htmlFor="frequency">执行频率</FieldLabel>
+                    <Select
+                      value={definition.schedule.frequency ?? "daily"}
+                      onValueChange={(value) =>
+                        updateDefinition({
+                          ...definition,
+                          schedule: {
+                            ...definition.schedule,
+                            frequency: (value ?? "daily") as NonNullable<
+                              TaskDefinition["schedule"]["frequency"]
+                            >,
+                            interval_days: value === "every_n_days" ? definition.schedule.interval_days ?? 2 : undefined,
+                            weekdays: value === "weekly" ? definition.schedule.weekdays ?? [1] : undefined,
+                            month_days: value === "monthly_dates" ? definition.schedule.month_days ?? [1] : undefined,
+                          },
+                        })
+                      }
+                    >
+                      <SelectTrigger id="frequency" className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">每天</SelectItem>
+                        <SelectItem value="every_n_days">每 N 天</SelectItem>
+                        <SelectItem value="weekly">每周</SelectItem>
+                        <SelectItem value="monthly_dates">每月固定日期</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="start-date">开始日期</FieldLabel>
+                    <Input
+                      id="start-date"
+                      type="date"
+                      value={definition.schedule.start_date ?? ""}
+                      onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, start_date: event.target.value || null } })}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="end-date">结束日期（可选）</FieldLabel>
+                    <Input
+                      id="end-date"
+                      type="date"
+                      value={definition.schedule.end_date ?? ""}
+                      onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, end_date: event.target.value || null } })}
+                    />
+                  </Field>
+                </div>
+                {(definition.schedule.frequency ?? "daily") === "every_n_days" ? (
+                  <Field>
+                    <FieldLabel htmlFor="interval-days">间隔天数（1–365）</FieldLabel>
+                    <Input id="interval-days" type="number" min={1} max={365} value={definition.schedule.interval_days ?? 2} onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, interval_days: Number(event.target.value) } })} />
+                  </Field>
+                ) : null}
+                {(definition.schedule.frequency ?? "daily") === "weekly" ? (
+                  <Field>
+                    <FieldLabel>选择星期（至少一天）</FieldLabel>
+                    <div className="flex flex-wrap gap-3">
+                      {[[1, "周一"], [2, "周二"], [3, "周三"], [4, "周四"], [5, "周五"], [6, "周六"], [7, "周日"]].map(([day, label]) => {
+                        const selected = (definition.schedule.weekdays ?? []).includes(day as number);
+                        return <label key={day} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={selected} onChange={(event) => { const next = new Set(definition.schedule.weekdays ?? []); event.target.checked ? next.add(day as number) : next.delete(day as number); updateDefinition({ ...definition, schedule: { ...definition.schedule, weekdays: [...next].sort((a, b) => a - b) } }); }} />{label}</label>;
+                      })}
+                    </div>
+                  </Field>
+                ) : null}
+                {(definition.schedule.frequency ?? "daily") === "monthly_dates" ? (
+                  <Field>
+                    <FieldLabel htmlFor="month-days">每月日期（逗号分隔，1–31）</FieldLabel>
+                    <Input id="month-days" value={(definition.schedule.month_days ?? [1]).join(",")} onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, month_days: event.target.value.split(",").map((value) => Number(value.trim())).filter((value) => Number.isFinite(value)) } })} />
+                  </Field>
+                ) : null}
+                <Field>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <FieldLabel>后续 5 次执行预览</FieldLabel>
+                      <p className="text-xs text-muted-foreground">按任务时区计算，不会改变任务状态。</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => void previewSchedule()} disabled={isPreviewing}>
+                      {isPreviewing ? <Spinner data-icon="inline-start" /> : null}刷新预览
+                    </Button>
+                  </div>
+                  {previewError ? <FieldError>{previewError}</FieldError> : null}
+                  {preview ? <div className="mt-2 rounded-md border bg-muted/20 p-3 text-sm">{preview.items.length ? <ol className="grid gap-1">{preview.items.map((item, index) => <li key={`${item}-${index}`}>{index + 1}. {new Date(item).toLocaleString("zh-CN", { timeZone: preview.timezone })}</li>)}</ol> : <span className="text-muted-foreground">没有可执行的未来时间。</span>}</div> : null}
+                </Field>
               </FieldGroup>
             </FieldSet>
             <FieldSet>
