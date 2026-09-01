@@ -7,13 +7,20 @@ import { ErrorState, PageSkeleton } from "@/components/resource-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { apiRequest, jsonBody } from "@/lib/api/client";
 import type { BotCommand, BotCommandsResponse } from "@/lib/api/types";
 
-type Draft = Pick<BotCommand, "description" | "enabled">;
+type CommandRole = "anonymous" | "user" | "admin";
+type Draft = Pick<BotCommand, "description" | "enabled"> & { allowedRoles: CommandRole[] };
+const ROLE_OPTIONS: Array<{ value: CommandRole; label: string }> = [
+  { value: "anonymous", label: "未绑定用户" },
+  { value: "user", label: "普通用户" },
+  { value: "admin", label: "管理员" },
+];
 
 export function CommandConfigPanel() {
   const queryClient = useQueryClient();
@@ -29,7 +36,13 @@ export function CommandConfigPanel() {
       Object.fromEntries(
         query.data.commands.map((item) => [
           item.command,
-          { description: item.description, enabled: item.enabled },
+          {
+            description: item.description,
+            enabled: item.enabled,
+            allowedRoles: item.allowedRoles.filter((role): role is CommandRole =>
+              ROLE_OPTIONS.some((option) => option.value === role),
+            ),
+          },
         ]),
       ),
     );
@@ -132,8 +145,8 @@ export function CommandConfigPanel() {
           </div>
         </div>
         <CardDescription>
-          控制 Telegram 菜单中展示的指令及其说明。保存只更新数据库配置，请通过“手动同步指令”应用到
-          Telegram。
+          控制 Telegram 菜单中展示的指令、说明及可调用身份。保存只更新数据库配置，请通过“手动同步指令”
+          应用菜单变更到 Telegram；权限变更会立即生效。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -142,9 +155,15 @@ export function CommandConfigPanel() {
             const draft = drafts[item.command] ?? {
               description: item.description,
               enabled: item.enabled,
+              allowedRoles: item.allowedRoles.filter(
+                (role): role is CommandRole =>
+                  ROLE_OPTIONS.some((option) => option.value === role),
+              ),
             };
             const changed =
-              draft.description !== item.description || draft.enabled !== item.enabled;
+              draft.description !== item.description ||
+              draft.enabled !== item.enabled ||
+              draft.allowedRoles.join(",") !== item.allowedRoles.join(",");
             return (
               <div
                 className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center"
@@ -181,8 +200,36 @@ export function CommandConfigPanel() {
                   />
                   菜单可见
                 </label>
+                <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                  <span className="text-xs font-medium">可调用身份</span>
+                  {ROLE_OPTIONS.map((option) => (
+                    <label className="flex items-center gap-1.5" key={option.value}>
+                      <Checkbox
+                        aria-label={`${option.label}可调用 /${item.command}`}
+                        checked={draft.allowedRoles.includes(option.value)}
+                        onCheckedChange={(checked) =>
+                          setDrafts((current) => ({
+                            ...current,
+                            [item.command]: {
+                              ...draft,
+                              allowedRoles: checked
+                                ? [...draft.allowedRoles, option.value]
+                                : draft.allowedRoles.filter((role) => role !== option.value),
+                            },
+                          }))
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
                 <Button
-                  disabled={!changed || mutation.isPending || !draft.description.trim()}
+                  disabled={
+                    !changed ||
+                    mutation.isPending ||
+                    !draft.description.trim() ||
+                    draft.allowedRoles.length === 0
+                  }
                   size="sm"
                   onClick={() =>
                     mutation.mutate({

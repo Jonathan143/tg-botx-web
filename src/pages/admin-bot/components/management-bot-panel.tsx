@@ -20,7 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { apiRequest, jsonBody } from "@/lib/api/client";
-import type { BotBindingsResponse } from "@/lib/api/types";
+import type { BotBindingCodesResponse, BotBindingsResponse } from "@/lib/api/types";
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
   dateStyle: "medium",
@@ -47,11 +47,20 @@ export function ManagementBotPanel() {
   const [bindingsPage, setBindingsPage] = useState(1);
   const pageSize = 20;
   const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: ["bot-bindings", codesPage, bindingsPage],
+  const codesQuery = useQuery({
+    queryKey: ["bot-binding-codes", codesPage],
+    enabled: activeTab === "codes",
+    queryFn: () =>
+      apiRequest<BotBindingCodesResponse>(
+        `/api/bot/binding-codes?page=${codesPage}&pageSize=${pageSize}`,
+      ),
+  });
+  const bindingsQuery = useQuery({
+    queryKey: ["bot-bindings", bindingsPage],
+    enabled: activeTab === "bindings",
     queryFn: () =>
       apiRequest<BotBindingsResponse>(
-        `/api/bot/bindings?codesPage=${codesPage}&bindingsPage=${bindingsPage}&pageSize=${pageSize}`,
+        `/api/bot/bindings?page=${bindingsPage}&pageSize=${pageSize}`,
       ),
   });
   const createMutation = useMutation({
@@ -76,7 +85,7 @@ export function ManagementBotPanel() {
       }
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["bot-bindings"] });
+      queryClient.invalidateQueries({ queryKey: ["bot-binding-codes"] });
       setGenerated(result.codes);
       setConfigOpen(false);
       toast.add({
@@ -90,7 +99,7 @@ export function ManagementBotPanel() {
   });
   const revokeCodeMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/bot/binding-codes/${id}`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-bindings"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-binding-codes"] }),
     onError: (error) =>
       toast.add({ type: "error", title: "撤销绑定码失败", description: error.message }),
   });
@@ -101,17 +110,15 @@ export function ManagementBotPanel() {
       toast.add({ type: "error", title: "解除绑定失败", description: error.message }),
   });
 
-  const data = query.data;
-  const codesPagination = data?.codesPagination ?? {
-    page: codesPage,
-    pageSize,
-    total: data?.codes.length ?? 0,
-  };
-  const bindingsPagination = data?.bindingsPagination ?? {
+  const codesData = codesQuery.data;
+  const bindingsData = bindingsQuery.data;
+  const codesPagination = codesData?.codesPagination ?? { page: codesPage, pageSize, total: 0 };
+  const bindingsPagination = bindingsData?.bindingsPagination ?? {
     page: bindingsPage,
     pageSize,
-    total: data?.bindings.length ?? 0,
+    total: 0,
   };
+  const statusData = codesData ?? bindingsData;
   return (
     <Card className="xl:col-span-2">
       <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -120,41 +127,41 @@ export function ManagementBotPanel() {
           <CardDescription>生成一次性绑定码并管理已授权的私聊用户。</CardDescription>
         </div>
         <Button
-          disabled={!data?.configured || createMutation.isPending}
+          disabled={!statusData?.configured || createMutation.isPending}
           onClick={() => setConfigOpen(true)}
         >
           批量生成
         </Button>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
-        {data ? (
+        {statusData ? (
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border bg-muted/20 p-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-muted-foreground">运行开关</span>
-                <StatusBadge status={data.enabled ? "enabled" : "disabled"} />
+                <StatusBadge status={statusData.enabled ? "enabled" : "disabled"} />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">控制管理 Bot 是否轮询 Telegram</p>
             </div>
             <div className="rounded-xl border bg-muted/20 p-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-muted-foreground">服务配置</span>
-                <StatusBadge status={data.configured ? "healthy" : "unavailable"} />
+                <StatusBadge status={statusData.configured ? "healthy" : "unavailable"} />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">Token 与运行参数配置状态</p>
             </div>
             <div className="rounded-xl border bg-muted/20 p-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-muted-foreground">当前运行</span>
-                <StatusBadge status={data.status.running ? "running" : "disabled"} />
+                <StatusBadge status={statusData.status.running ? "running" : "disabled"} />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {data.status.lastError ?? "最近一次轮询状态正常"}
+                {statusData.status.lastError ?? "最近一次轮询状态正常"}
               </p>
             </div>
           </div>
         ) : null}
-        {!data?.configured ? (
+        {!statusData?.configured ? (
           <Alert>
             <AlertTitle>管理 Bot 未配置</AlertTitle>
             <AlertDescription>
@@ -175,8 +182,8 @@ export function ManagementBotPanel() {
                   绑定码仅能使用一次，过期或撤销后将立即失效。
                 </p>
               </div>
-              {data?.codes.length ? (
-                data.codes.map((item) => (
+              {codesData?.codes.length ? (
+                codesData.codes.map((item) => (
                   <div
                     className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
                     key={item.id}
@@ -213,7 +220,7 @@ export function ManagementBotPanel() {
               ) : (
                 <p className="text-sm text-muted-foreground">暂无绑定码。</p>
               )}
-              {data ? (
+              {codesData ? (
                 <DataPagination
                   page={codesPagination.page}
                   pageSize={codesPagination.pageSize}
@@ -231,8 +238,8 @@ export function ManagementBotPanel() {
                   只有私聊用户可以使用管理 Bot，解绑后可重新绑定。
                 </p>
               </div>
-              {data?.bindings.length ? (
-                data.bindings.map((binding) => (
+              {bindingsData?.bindings.length ? (
+                bindingsData.bindings.map((binding) => (
                   <div
                     className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
                     key={binding.id}
@@ -261,7 +268,7 @@ export function ManagementBotPanel() {
               ) : (
                 <p className="text-sm text-muted-foreground">暂无已绑定用户。</p>
               )}
-              {data ? (
+              {bindingsData ? (
                 <DataPagination
                   page={bindingsPagination.page}
                   pageSize={bindingsPagination.pageSize}

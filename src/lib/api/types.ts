@@ -232,7 +232,7 @@ export type BotBinding = {
   role: "admin" | "user" | string;
 };
 
-export type BotBindingsResponse = {
+export type BotStatus = {
   enabled: boolean;
   configured: boolean;
   status: {
@@ -243,8 +243,14 @@ export type BotBindingsResponse = {
     lastPollAt: string | null;
     lastError: string | null;
   };
+};
+
+export type BotBindingCodesResponse = BotStatus & {
   codes: BotBindingCode[];
   codesPagination: { page: number; pageSize: number; total: number };
+};
+
+export type BotBindingsResponse = BotStatus & {
   bindings: BotBinding[];
   bindingsPagination: { page: number; pageSize: number; total: number };
 };
@@ -253,6 +259,7 @@ export type BotCommand = {
   command: string;
   description: string;
   enabled: boolean;
+  allowedRoles: Array<"anonymous" | "user" | "admin" | string>;
   syncWarning?: string;
 };
 
