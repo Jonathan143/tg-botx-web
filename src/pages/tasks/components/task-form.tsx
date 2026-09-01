@@ -3,6 +3,7 @@ import { parse, stringify } from "yaml";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldContent,
@@ -701,12 +702,11 @@ export function TaskForm({
                         );
                         return (
                           <label key={day} className="flex items-center gap-1 text-sm">
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={selected}
-                              onChange={(event) => {
+                              onCheckedChange={(checked) => {
                                 const next = new Set(definition.schedule.weekdays ?? []);
-                                event.target.checked
+                                checked === true
                                   ? next.add(day as number)
                                   : next.delete(day as number);
                                 updateDefinition({

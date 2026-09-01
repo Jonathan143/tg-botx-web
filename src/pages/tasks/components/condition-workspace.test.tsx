@@ -19,11 +19,14 @@ describe("ConditionWorkspace", () => {
     );
 
     expect(screen.getByRole("heading", { name: "条件判断工作区" })).toBeTruthy();
-    expect(screen.getByText("分支子画布")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "全局配置" })).toBeTruthy();
     expect(screen.getByText("全文")).toBeTruthy();
     expect(screen.getByText("文本")).toBeTruthy();
 
+    fireEvent.click(screen.getByRole("button", { name: /满足条件/ }));
+    expect(screen.getByText("分支子画布")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("分支名称"), { target: { value: "余额充足" } });
+    fireEvent.click(screen.getByRole("button", { name: "全局配置" }));
     fireEvent.click(screen.getByRole("switch", { name: "严格模式" }));
     fireEvent.click(screen.getByRole("button", { name: "应用条件配置" }));
 
