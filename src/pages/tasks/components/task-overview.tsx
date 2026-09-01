@@ -80,9 +80,10 @@ export function TaskOverview({
         : frequency === "monthly_dates"
           ? `每月 ${(task.schedule.month_days ?? []).join("、") || "—"} 号`
           : "每天";
-  const schedule = task.schedule.type === "fixed"
-    ? `${frequencyLabel} ${task.schedule.time ?? "—"}`
-    : `${frequencyLabel} ${task.schedule.start ?? "—"}–${task.schedule.end ?? "—"} 随机`;
+  const schedule =
+    task.schedule.type === "fixed"
+      ? `${frequencyLabel} ${task.schedule.time ?? "—"}`
+      : `${frequencyLabel} ${task.schedule.start ?? "—"}–${task.schedule.end ?? "—"} 随机`;
   const stepCount = definition.steps.length;
   const lastStatus = task.lastStatus?.toLowerCase();
   const isSuccessful = lastStatus === "success" || lastStatus === "completed";

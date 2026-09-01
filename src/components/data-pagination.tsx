@@ -54,6 +54,10 @@ export function DataPagination({
     return null;
   }
   const pageItems = getPageItems(page, totalPages);
+  const pageSizeItems = pageSizeOptions.map((option) => ({
+    value: String(option),
+    label: `${option} 条`,
+  }));
 
   return (
     <div className="relative flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -119,6 +123,7 @@ export function DataPagination({
           <div className="flex items-center gap-2">
             <span>每页</span>
             <Select
+              items={pageSizeItems}
               value={String(pageSize)}
               onValueChange={(value) => {
                 if (!value) return;

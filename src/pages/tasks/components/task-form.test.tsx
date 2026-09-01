@@ -15,6 +15,8 @@ describe("TaskForm", () => {
         <TaskForm submitLabel="创建任务" isSubmitting={false} onSubmit={onSubmit} />
       </QueryClientProvider>,
     );
+    expect(screen.getByText("中国标准时间（Asia/Shanghai）")).toBeTruthy();
+    expect(screen.getByText("每天")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
     expect(await screen.findByText("任务名称、账号和目标不能为空。")).toBeTruthy();
     expect(onSubmit).not.toHaveBeenCalled();

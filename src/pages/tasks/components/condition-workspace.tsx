@@ -84,10 +84,10 @@ import {
   updateNestedCondition,
   validateConditionStep,
   variablesAtConditionPath,
-  waitAtConditionPath,
   type WorkflowStep,
-  type WorkflowVariableDefinition,
   type WorkflowValueType,
+  type WorkflowVariableDefinition,
+  waitAtConditionPath,
 } from "@/lib/workflow-condition";
 
 type BranchSequenceRenderer = (props: {
@@ -115,6 +115,11 @@ const EXTRACT_MODES: Array<{ value: ConditionExtract["mode"]; label: string }> =
   { value: "first_number", label: "首个数字" },
   { value: "regex_capture", label: "正则捕获组" },
   { value: "metadata", label: "消息元数据" },
+];
+
+const OPERAND_SOURCE_OPTIONS: Array<{ value: ConditionOperand["source"]; label: string }> = [
+  { value: "literal", label: "固定值" },
+  { value: "variable", label: "变量" },
 ];
 
 function keyedEntries<T>(items: T[], identity: (item: T) => string) {
@@ -202,6 +207,7 @@ function ExtractionCard({
             <Field>
               <FieldLabel>提取方式</FieldLabel>
               <Select
+                items={EXTRACT_MODES}
                 value={extract.mode}
                 disabled={readOnly}
                 onValueChange={(value) =>
@@ -225,6 +231,7 @@ function ExtractionCard({
             <Field>
               <FieldLabel>变量类型</FieldLabel>
               <Select
+                items={VALUE_TYPES}
                 value={extract.value_type}
                 disabled={
                   readOnly || extract.mode === "first_number" || extract.mode === "metadata"
@@ -252,6 +259,7 @@ function ExtractionCard({
             <Field>
               <FieldLabel>元数据字段</FieldLabel>
               <Select
+                items={CONDITION_METADATA_FIELDS}
                 value={extract.field}
                 disabled={readOnly}
                 onValueChange={(value) => {
@@ -388,9 +396,14 @@ function OperandEditor({
   onDelete: () => void;
 }) {
   const compatibleVariables = variables.filter((item) => item.valueType === valueType);
+  const compatibleVariableItems = compatibleVariables.map((variable) => ({
+    value: variable.name,
+    label: variable.name,
+  }));
   return (
     <div className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_auto]">
       <Select
+        items={OPERAND_SOURCE_OPTIONS}
         value={operand.source}
         disabled={readOnly}
         onValueChange={(value) =>
@@ -406,13 +419,17 @@ function OperandEditor({
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
-            <SelectItem value="literal">固定值</SelectItem>
-            <SelectItem value="variable">变量</SelectItem>
+            {OPERAND_SOURCE_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
           </SelectGroup>
         </SelectContent>
       </Select>
       {operand.source === "variable" ? (
         <Select
+          items={compatibleVariableItems}
           value={operand.name}
           disabled={readOnly}
           onValueChange={(value) => value && onChange({ source: "variable", name: value })}
@@ -481,6 +498,12 @@ function ConditionRuleCard({
   const regex = rule.regex ?? createDefaultRegexConfig();
   const operandType = operandValueType(rule);
   const setRule = (next: ConditionRule) => onChange(reconcileRuleOperands(next));
+  const variableItems = variables.map((variable) => ({
+    value: variable.name,
+    label: `${variable.name} · ${
+      VALUE_TYPES.find((item) => item.value === variable.valueType)?.label ?? variable.valueType
+    }`,
+  }));
   return (
     <Card size="sm">
       <CardHeader>
@@ -492,6 +515,7 @@ function ConditionRuleCard({
             <Field>
               <FieldLabel>引用变量</FieldLabel>
               <Select
+                items={variableItems}
                 value={rule.variable}
                 disabled={readOnly}
                 onValueChange={(value) => {
@@ -518,6 +542,7 @@ function ConditionRuleCard({
             <Field>
               <FieldLabel>判断方式</FieldLabel>
               <Select
+                items={operators}
                 value={rule.operator}
                 disabled={readOnly}
                 onValueChange={(value) => value && setRule({ ...rule, operator: value })}

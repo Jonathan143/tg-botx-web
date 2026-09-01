@@ -90,6 +90,16 @@ const commonTimezones = [
   { value: "America/Los_Angeles", label: "美国太平洋时间（America/Los_Angeles）" },
 ];
 
+const frequencyOptions: Array<{
+  value: NonNullable<TaskDefinition["schedule"]["frequency"]>;
+  label: string;
+}> = [
+  { value: "daily", label: "每天" },
+  { value: "every_n_days", label: "每 N 天" },
+  { value: "weekly", label: "每周" },
+  { value: "monthly_dates", label: "每月固定日期" },
+];
+
 export function TaskForm({
   initialValue,
   accounts,
@@ -167,6 +177,15 @@ export function TaskForm({
   const selectedAccount = useMemo(
     () => accounts?.find((account) => account.name === definition.account),
     [accounts, definition.account],
+  );
+
+  const accountSelectItems = useMemo(
+    () =>
+      accountOptions.map((account) => ({
+        value: account.name,
+        label: `${account.name}${account.active ? "" : "（已停用）"}`,
+      })),
+    [accountOptions],
   );
 
   const timezoneOptions = useMemo(() => {
@@ -333,7 +352,9 @@ export function TaskForm({
       setPreview(result);
     } catch (previewRequestError) {
       setPreviewError(
-        previewRequestError instanceof Error ? previewRequestError.message : "预览失败，请检查调度配置。",
+        previewRequestError instanceof Error
+          ? previewRequestError.message
+          : "预览失败，请检查调度配置。",
       );
     } finally {
       setIsPreviewing(false);
@@ -366,6 +387,7 @@ export function TaskForm({
               <Field>
                 <FieldLabel htmlFor="task-account">Telegram 账号</FieldLabel>
                 <Select
+                  items={accountSelectItems}
                   value={definition.account}
                   onValueChange={(value) =>
                     updateDefinition({ ...definition, account: value ?? "" })
@@ -490,6 +512,7 @@ export function TaskForm({
                   <Field>
                     <FieldLabel htmlFor="timezone">时区</FieldLabel>
                     <Select
+                      items={timezoneOptions}
                       value={definition.schedule.timezone}
                       onValueChange={(value) =>
                         updateDefinition({
@@ -564,6 +587,7 @@ export function TaskForm({
                   <Field>
                     <FieldLabel htmlFor="frequency">执行频率</FieldLabel>
                     <Select
+                      items={frequencyOptions}
                       value={definition.schedule.frequency ?? "daily"}
                       onValueChange={(value) =>
                         updateDefinition({
@@ -573,19 +597,33 @@ export function TaskForm({
                             frequency: (value ?? "daily") as NonNullable<
                               TaskDefinition["schedule"]["frequency"]
                             >,
-                            interval_days: value === "every_n_days" ? definition.schedule.interval_days ?? 2 : undefined,
-                            weekdays: value === "weekly" ? definition.schedule.weekdays ?? [1] : undefined,
-                            month_days: value === "monthly_dates" ? definition.schedule.month_days ?? [1] : undefined,
+                            interval_days:
+                              value === "every_n_days"
+                                ? (definition.schedule.interval_days ?? 2)
+                                : undefined,
+                            weekdays:
+                              value === "weekly"
+                                ? (definition.schedule.weekdays ?? [1])
+                                : undefined,
+                            month_days:
+                              value === "monthly_dates"
+                                ? (definition.schedule.month_days ?? [1])
+                                : undefined,
                           },
                         })
                       }
                     >
-                      <SelectTrigger id="frequency" className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="frequency" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="daily">每天</SelectItem>
-                        <SelectItem value="every_n_days">每 N 天</SelectItem>
-                        <SelectItem value="weekly">每周</SelectItem>
-                        <SelectItem value="monthly_dates">每月固定日期</SelectItem>
+                        <SelectGroup>
+                          {frequencyOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   </Field>
@@ -595,7 +633,15 @@ export function TaskForm({
                       id="start-date"
                       type="date"
                       value={definition.schedule.start_date ?? ""}
-                      onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, start_date: event.target.value || null } })}
+                      onChange={(event) =>
+                        updateDefinition({
+                          ...definition,
+                          schedule: {
+                            ...definition.schedule,
+                            start_date: event.target.value || null,
+                          },
+                        })
+                      }
                     />
                   </Field>
                   <Field>
@@ -604,23 +650,77 @@ export function TaskForm({
                       id="end-date"
                       type="date"
                       value={definition.schedule.end_date ?? ""}
-                      onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, end_date: event.target.value || null } })}
+                      onChange={(event) =>
+                        updateDefinition({
+                          ...definition,
+                          schedule: {
+                            ...definition.schedule,
+                            end_date: event.target.value || null,
+                          },
+                        })
+                      }
                     />
                   </Field>
                 </div>
                 {(definition.schedule.frequency ?? "daily") === "every_n_days" ? (
                   <Field>
                     <FieldLabel htmlFor="interval-days">间隔天数（1–365）</FieldLabel>
-                    <Input id="interval-days" type="number" min={1} max={365} value={definition.schedule.interval_days ?? 2} onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, interval_days: Number(event.target.value) } })} />
+                    <Input
+                      id="interval-days"
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={definition.schedule.interval_days ?? 2}
+                      onChange={(event) =>
+                        updateDefinition({
+                          ...definition,
+                          schedule: {
+                            ...definition.schedule,
+                            interval_days: Number(event.target.value),
+                          },
+                        })
+                      }
+                    />
                   </Field>
                 ) : null}
                 {(definition.schedule.frequency ?? "daily") === "weekly" ? (
                   <Field>
                     <FieldLabel>选择星期（至少一天）</FieldLabel>
                     <div className="flex flex-wrap gap-3">
-                      {[[1, "周一"], [2, "周二"], [3, "周三"], [4, "周四"], [5, "周五"], [6, "周六"], [7, "周日"]].map(([day, label]) => {
-                        const selected = (definition.schedule.weekdays ?? []).includes(day as number);
-                        return <label key={day} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={selected} onChange={(event) => { const next = new Set(definition.schedule.weekdays ?? []); event.target.checked ? next.add(day as number) : next.delete(day as number); updateDefinition({ ...definition, schedule: { ...definition.schedule, weekdays: [...next].sort((a, b) => a - b) } }); }} />{label}</label>;
+                      {[
+                        [1, "周一"],
+                        [2, "周二"],
+                        [3, "周三"],
+                        [4, "周四"],
+                        [5, "周五"],
+                        [6, "周六"],
+                        [7, "周日"],
+                      ].map(([day, label]) => {
+                        const selected = (definition.schedule.weekdays ?? []).includes(
+                          day as number,
+                        );
+                        return (
+                          <label key={day} className="flex items-center gap-1 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={(event) => {
+                                const next = new Set(definition.schedule.weekdays ?? []);
+                                event.target.checked
+                                  ? next.add(day as number)
+                                  : next.delete(day as number);
+                                updateDefinition({
+                                  ...definition,
+                                  schedule: {
+                                    ...definition.schedule,
+                                    weekdays: [...next].sort((a, b) => a - b),
+                                  },
+                                });
+                              }}
+                            />
+                            {label}
+                          </label>
+                        );
                       })}
                     </div>
                   </Field>
@@ -628,21 +728,61 @@ export function TaskForm({
                 {(definition.schedule.frequency ?? "daily") === "monthly_dates" ? (
                   <Field>
                     <FieldLabel htmlFor="month-days">每月日期（逗号分隔，1–31）</FieldLabel>
-                    <Input id="month-days" value={(definition.schedule.month_days ?? [1]).join(",")} onChange={(event) => updateDefinition({ ...definition, schedule: { ...definition.schedule, month_days: event.target.value.split(",").map((value) => Number(value.trim())).filter((value) => Number.isFinite(value)) } })} />
+                    <Input
+                      id="month-days"
+                      value={(definition.schedule.month_days ?? [1]).join(",")}
+                      onChange={(event) =>
+                        updateDefinition({
+                          ...definition,
+                          schedule: {
+                            ...definition.schedule,
+                            month_days: event.target.value
+                              .split(",")
+                              .map((value) => Number(value.trim()))
+                              .filter((value) => Number.isFinite(value)),
+                          },
+                        })
+                      }
+                    />
                   </Field>
                 ) : null}
                 <Field>
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <FieldLabel>后续 5 次执行预览</FieldLabel>
-                      <p className="text-xs text-muted-foreground">按任务时区计算，不会改变任务状态。</p>
+                      <p className="text-xs text-muted-foreground">
+                        按任务时区计算，不会改变任务状态。
+                      </p>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => void previewSchedule()} disabled={isPreviewing}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void previewSchedule()}
+                      disabled={isPreviewing}
+                    >
                       {isPreviewing ? <Spinner data-icon="inline-start" /> : null}刷新预览
                     </Button>
                   </div>
                   {previewError ? <FieldError>{previewError}</FieldError> : null}
-                  {preview ? <div className="mt-2 rounded-md border bg-muted/20 p-3 text-sm">{preview.items.length ? <ol className="grid gap-1">{preview.items.map((item, index) => <li key={`${item}-${index}`}>{index + 1}. {new Date(item).toLocaleString("zh-CN", { timeZone: preview.timezone })}</li>)}</ol> : <span className="text-muted-foreground">没有可执行的未来时间。</span>}</div> : null}
+                  {preview ? (
+                    <div className="mt-2 rounded-md border bg-muted/20 p-3 text-sm">
+                      {preview.items.length ? (
+                        <ol className="grid gap-1">
+                          {preview.items.map((item, index) => (
+                            <li key={item}>
+                              {index + 1}.{" "}
+                              {new Date(item).toLocaleString("zh-CN", {
+                                timeZone: preview.timezone,
+                              })}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <span className="text-muted-foreground">没有可执行的未来时间。</span>
+                      )}
+                    </div>
+                  ) : null}
                 </Field>
               </FieldGroup>
             </FieldSet>

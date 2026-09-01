@@ -84,6 +84,7 @@
 4. 没有新增仅用于转发导出的 barrel 文件。
 5. `index.tsx` 只保留页面级编排、路由参数、查询和状态，不承载大段业务 JSX。
 6. 组件、类型、Hook、事件处理函数和布尔值命名符合本文件约定。
+7. Avoid using the index of an array as key property in an element
 
 ## 常用命令
 
