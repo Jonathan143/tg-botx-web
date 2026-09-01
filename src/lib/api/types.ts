@@ -213,9 +213,10 @@ export type SettingsResponse = Record<string, string | number | boolean | null>;
 export type BotBindingCode = {
   id: string;
   hint: string;
+  role: "admin" | "user" | string;
   status: "active" | "used" | "revoked" | "expired" | string;
   createdAt: string;
-  expiresAt: string;
+  expiresAt: string | null;
   usedAt: string | null;
   revokedAt: string | null;
 };
@@ -228,6 +229,7 @@ export type BotBinding = {
   firstName: string | null;
   lastName: string | null;
   boundAt: string;
+  role: "admin" | "user" | string;
 };
 
 export type BotBindingsResponse = {
@@ -242,7 +244,9 @@ export type BotBindingsResponse = {
     lastError: string | null;
   };
   codes: BotBindingCode[];
+  codesPagination: { page: number; pageSize: number; total: number };
   bindings: BotBinding[];
+  bindingsPagination: { page: number; pageSize: number; total: number };
 };
 
 export type BotCommand = {
