@@ -263,6 +263,7 @@ export type BotCommand = {
   allowedRoles: Array<"anonymous" | "user" | "admin" | string>;
   executorType: "none" | "http" | "builtin_function" | "python" | "javascript";
   executorConfig: Record<string, unknown>;
+  updatedAt?: string | null;
   syncWarning?: string;
 };
 

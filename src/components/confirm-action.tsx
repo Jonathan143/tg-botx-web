@@ -1,4 +1,5 @@
 import { AlertTriangleIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 import {
@@ -21,6 +22,9 @@ export function ConfirmAction({
   description,
   actionLabel,
   triggerLabel,
+  triggerContent,
+  triggerAriaLabel,
+  triggerDisabled = false,
   variant = "outline",
   onConfirm,
 }: {
@@ -28,6 +32,9 @@ export function ConfirmAction({
   description: string;
   actionLabel: string;
   triggerLabel: string;
+  triggerContent?: ReactNode;
+  triggerAriaLabel?: string;
+  triggerDisabled?: boolean;
   variant?: "default" | "outline" | "destructive" | "secondary" | "ghost";
   onConfirm: () => Promise<void> | void;
 }) {
@@ -46,7 +53,11 @@ export function ConfirmAction({
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger render={<Button variant={variant} />}>{triggerLabel}</AlertDialogTrigger>
+      <AlertDialogTrigger
+        render={<Button aria-label={triggerAriaLabel} disabled={triggerDisabled} size={triggerContent ? "icon-sm" : "default"} variant={variant} />}
+      >
+        {triggerContent ?? triggerLabel}
+      </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogMedia>
