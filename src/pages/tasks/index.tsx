@@ -43,6 +43,18 @@ export default function TasksPage() {
     },
     onError: (error) => toast.add({ type: "error", title: "操作失败", description: error.message }),
   });
+  const skipNextMutation = useMutation({
+    mutationFn: (task: Task) =>
+      apiRequest(`/api/tasks/${task.id}/skip-next`, {
+        method: "POST",
+        body: jsonBody({}),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.add({ type: "success", title: "已跳过下次运行" });
+    },
+    onError: (error) => toast.add({ type: "error", title: "操作失败", description: error.message }),
+  });
 
   return (
     <>
@@ -86,6 +98,7 @@ export default function TasksPage() {
                 : tasksQuery.data.items
             }
             onToggle={(task) => toggleMutation.mutate(task)}
+            onSkipNext={(task) => skipNextMutation.mutate(task)}
             onExport={(task) =>
               downloadFromApi(`/api/tasks/${task.id}/export`, `${task.name}.yaml`)
             }

@@ -1,4 +1,11 @@
-import { DownloadIcon, MoreHorizontalIcon } from "lucide-react";
+import {
+  CirclePauseIcon,
+  CirclePlayIcon,
+  DownloadIcon,
+  EyeIcon,
+  MoreHorizontalIcon,
+  SkipForwardIcon,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { EmptyState } from "@/components/resource-state";
@@ -25,10 +32,12 @@ import { formatDateTime } from "@/lib/format";
 export function TaskTable({
   tasks,
   onToggle,
+  onSkipNext,
   onExport,
 }: {
   tasks: Task[];
   onToggle: (task: Task) => void;
+  onSkipNext: (task: Task) => void;
   onExport: (task: Task) => void;
 }) {
   if (tasks.length === 0) {
@@ -57,6 +66,7 @@ export function TaskTable({
                 <Link to={`/tasks/${task.id}`} className="font-medium hover:underline">
                   {task.name}
                 </Link>
+                <p className="mt-1 max-w-xs truncate text-xs text-muted-foreground">{task.id}</p>
                 <p className="mt-1 max-w-xs truncate text-xs text-muted-foreground md:hidden">
                   {task.account} · {task.target}
                 </p>
@@ -88,11 +98,19 @@ export function TaskTable({
                   <DropdownMenuContent align="end">
                     <DropdownMenuGroup>
                       <DropdownMenuItem render={<Link to={`/tasks/${task.id}`} />}>
+                        <EyeIcon />
                         查看详情
                       </DropdownMenuItem>
                       {!task.archived ? (
                         <DropdownMenuItem onClick={() => onToggle(task)}>
+                          {task.enabled ? <CirclePauseIcon /> : <CirclePlayIcon />}
                           {task.enabled ? "停用任务" : "启用任务"}
+                        </DropdownMenuItem>
+                      ) : null}
+                      {task.enabled && task.nextRunAt ? (
+                        <DropdownMenuItem onClick={() => onSkipNext(task)}>
+                          <SkipForwardIcon />
+                          跳过下次运行
                         </DropdownMenuItem>
                       ) : null}
                       <DropdownMenuItem onClick={() => onExport(task)}>
