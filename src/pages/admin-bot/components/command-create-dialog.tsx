@@ -22,6 +22,7 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
   const [command, setCommand] = useState("");
   const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const [allowedRoles, setAllowedRoles] = useState<CommandRole[]>(
     ROLE_OPTIONS.map((option) => option.value),
   );
@@ -33,6 +34,7 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
           command: command.trim(),
           description: description.trim(),
           enabled,
+          menuVisible,
           allowedRoles,
           executorType: "none",
           executorConfig: {},
@@ -42,6 +44,7 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
       setCommand("");
       setDescription("");
       setEnabled(false);
+      setMenuVisible(false);
       setAllowedRoles(ROLE_OPTIONS.map((option) => option.value));
       onOpenChange(false);
       queryClient.invalidateQueries({ queryKey: ["bot-commands"] });
@@ -91,7 +94,7 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
             <div>
               <Label htmlFor="new-command-enabled">启用开关</Label>
               <p className="mt-1 text-xs text-muted-foreground">
-                启用后指令会进入 Telegram 菜单并允许调用。
+                控制指令是否允许被调用，与菜单显示独立。
               </p>
             </div>
             <Switch
@@ -100,6 +103,10 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
               checked={enabled}
               onCheckedChange={setEnabled}
             />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div><Label htmlFor="new-command-menu-visible">菜单显示</Label><p className="mt-1 text-xs text-muted-foreground">控制是否出现在 Telegram 指令菜单中。</p></div>
+            <Switch id="new-command-menu-visible" aria-label="菜单显示开关" checked={menuVisible} onCheckedChange={setMenuVisible} />
           </div>
           <div className="grid gap-3 rounded-lg border p-3">
             <div>

@@ -2,7 +2,7 @@ import type { BotCommand } from "@/lib/api/types";
 
 export type CommandRole = "anonymous" | "user" | "admin";
 
-export type CommandDraft = Pick<BotCommand, "description" | "enabled"> & {
+export type CommandDraft = Pick<BotCommand, "command" | "description" | "enabled" | "menuVisible"> & {
   allowedRoles: CommandRole[];
 };
 
@@ -14,11 +14,12 @@ export const ROLE_OPTIONS: Array<{ value: CommandRole; label: string }> = [
 
 export function toCommandDraft(item: BotCommand): CommandDraft {
   return {
+    command: item.command,
     description: item.description,
     enabled: item.enabled,
+    menuVisible: item.menuVisible,
     allowedRoles: item.allowedRoles.filter((role): role is CommandRole =>
       ROLE_OPTIONS.some((option) => option.value === role),
     ),
   };
 }
-

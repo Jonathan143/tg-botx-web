@@ -1,20 +1,17 @@
-import { ArrowDownToLineIcon, ChevronLeftIcon, ChevronRightIcon, RefreshCwIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowDownToLineIcon, RefreshCwIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ErrorState, PageSkeleton } from "@/components/resource-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { apiRequest, jsonBody } from "@/lib/api/client";
 import type { BotCommand, BotCommandsResponse } from "@/lib/api/types";
 import { CommandConfigTable } from "./command-config-table";
 import { CommandConfigToolbar } from "./command-config-toolbar";
 import { CommandCreateDialog } from "./command-create-dialog";
-import { type CommandDraft, toCommandDraft } from "./command-config-types";
-
-const PAGE_SIZE_OPTIONS = [10, 20, 50];
+import { CommandEditDialog } from "./command-edit-dialog";
 
 export function CommandConfigPanel() {
   const queryClient = useQueryClient();
@@ -22,53 +19,89 @@ export function CommandConfigPanel() {
     queryKey: ["bot-commands"],
     queryFn: () => apiRequest<BotCommandsResponse>("/api/bot/commands"),
   });
-  const [drafts, setDrafts] = useState<Record<string, CommandDraft>>({});
   const [search, setSearch] = useState("");
   const [onlyEnabled, setOnlyEnabled] = useState(false);
   const [group, setGroup] = useState<"all" | "system" | "custom">("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingCommand, setEditingCommand] = useState<BotCommand | null>(null);
+  const [commandOrder, setCommandOrder] = useState<string[]>([]);
+  const [orderDirty, setOrderDirty] = useState(false);
 
   useEffect(() => {
-    if (!query.data) return;
-    setDrafts(Object.fromEntries(query.data.commands.map((item) => [item.command, toCommandDraft(item)])));
-  }, [query.data]);
+    if (!query.data || orderDirty) return;
+    setCommandOrder(query.data.commands.map((item) => item.command));
+  }, [orderDirty, query.data]);
 
-  const updateMutation = useMutation({
-    mutationFn: ({ command, draft }: { command: string; draft: CommandDraft }) =>
-      apiRequest<BotCommand>(`/api/bot/commands/${command}`, { method: "PATCH", body: jsonBody(draft) }),
-    onSuccess: (item) => {
-      queryClient.setQueryData<BotCommandsResponse>(["bot-commands"], (current) =>
-        current ? { commands: current.commands.map((entry) => (entry.command === item.command ? item : entry)) } : current,
-      );
-      toast.add({ type: "success", title: `/${item.command} 配置已保存` });
+  const orderMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<BotCommandsResponse>("/api/bot/commands/order", {
+        method: "PUT",
+        body: jsonBody({ commands: commandOrder }),
+      }),
+    onSuccess: (result) => {
+      queryClient.setQueryData(["bot-commands"], result);
+      setOrderDirty(false);
+      toast.add({ type: "success", title: "指令排序已保存" });
     },
-    onError: (error) => toast.add({ type: "error", title: "指令配置保存失败", description: error.message }),
+    onError: (error) =>
+      toast.add({ type: "error", title: "保存指令排序失败", description: error.message }),
   });
 
+  const handleReorder = (source: string, target: string) => {
+    setCommandOrder((current) => {
+      const next = [...current];
+      const sourceIndex = next.indexOf(source);
+      const targetIndex = next.indexOf(target);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+      next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, source);
+      return next;
+    });
+    setOrderDirty(true);
+  };
+
   const deleteMutation = useMutation({
-    mutationFn: (command: string) => apiRequest(`/api/bot/commands/${command}`, { method: "DELETE" }),
-    onSuccess: () => {
+    mutationFn: (command: string) =>
+      apiRequest(`/api/bot/commands/${command}`, { method: "DELETE" }),
+    onSuccess: (_data, command) => {
+      setOrderDirty(false);
+      setCommandOrder((current) => current.filter((item) => item !== command));
       queryClient.invalidateQueries({ queryKey: ["bot-commands"] });
-      toast.add({ type: "success", title: "指令已删除", description: "请同步指令以应用菜单变更。" });
+      toast.add({
+        type: "success",
+        title: "指令已删除",
+        description: "请同步指令以应用菜单变更。",
+      });
     },
-    onError: (error) => toast.add({ type: "error", title: "删除指令失败", description: error.message }),
+    onError: (error) =>
+      toast.add({ type: "error", title: "删除指令失败", description: error.message }),
   });
 
   const filteredCommands = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    return (query.data?.commands ?? []).filter((item) => {
-      const matchesKeyword = !keyword || item.command.includes(keyword) || item.description.toLowerCase().includes(keyword);
-      return matchesKeyword && (!onlyEnabled || item.enabled) && (group === "all" || item.type === group);
-    });
-  }, [group, onlyEnabled, query.data?.commands, search]);
-  const pageCount = Math.max(1, Math.ceil(filteredCommands.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const visibleCommands = filteredCommands.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
+    const commands = query.data?.commands ?? [];
+    const orderIndex = new Map(commandOrder.map((command, index) => [command, index]));
+    return [...commands]
+      .sort(
+        (left, right) =>
+          (orderIndex.get(left.command) ?? Number.MAX_SAFE_INTEGER) -
+          (orderIndex.get(right.command) ?? Number.MAX_SAFE_INTEGER),
+      )
+      .filter((item) => {
+        const matchesKeyword =
+          !keyword ||
+          item.command.includes(keyword) ||
+          item.description.toLowerCase().includes(keyword);
+        return (
+          matchesKeyword &&
+          (!onlyEnabled || item.enabled) &&
+          (group === "all" || item.type === group)
+        );
+      });
+  }, [commandOrder, group, onlyEnabled, query.data?.commands, search]);
   if (query.isPending && !query.data) return <PageSkeleton />;
-  if (query.isError && !query.data) return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
+  if (query.isError && !query.data)
+    return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
 
   return (
     <Card>
@@ -77,11 +110,27 @@ export function CommandConfigPanel() {
           <div>
             <CardTitle className="text-xl">指令配置</CardTitle>
             <CardDescription className="mt-2 max-w-3xl">
-              控制 Telegram 菜单中展示的指令、说明及可调用身份。保存后仅更新数据库配置，请通过“同步指令”应用菜单变更；权限变更会立即生效。
+              分别控制指令启用状态、Telegram
+              菜单显示和可调用身份。保存后仅更新数据库配置，请通过“同步指令”应用菜单变更；权限变更会立即生效。
             </CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" disabled={query.isFetching} onClick={() => query.refetch()}>
+            {orderDirty && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={orderMutation.isPending}
+                onClick={() => orderMutation.mutate()}
+              >
+                保存排序
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={query.isFetching}
+              onClick={() => query.refetch()}
+            >
               <ArrowDownToLineIcon data-icon="inline-start" />
               拉取指令
             </Button>
@@ -99,31 +148,27 @@ export function CommandConfigPanel() {
           onlyEnabled={onlyEnabled}
           search={search}
         />
-        <div className="overflow-hidden rounded-b-xl border-t">
+        <div className="overflow-hidden rounded-b-xl">
           <CommandConfigTable
-            commands={visibleCommands}
-            drafts={drafts}
+            commands={filteredCommands}
             onDelete={(command) => deleteMutation.mutateAsync(command).then(() => undefined)}
-            onDraftChange={(command, draft) => setDrafts((current) => ({ ...current, [command]: draft }))}
-            onSave={(command, draft) => updateMutation.mutate({ command, draft })}
-            savingCommand={updateMutation.isPending ? updateMutation.variables?.command ?? null : null}
+            onEdit={setEditingCommand}
+            onReorder={handleReorder}
+            savingCommand={null}
           />
-          <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <div className="border-t px-4 py-3 text-sm text-muted-foreground">
             <span>共 {filteredCommands.length} 条</span>
-            <div className="flex items-center gap-3">
-              <span>每页</span>
-              <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
-                <SelectTrigger aria-label="每页条数" className="h-7 min-w-20" size="sm"><SelectValue /></SelectTrigger>
-                <SelectContent>{PAGE_SIZE_OPTIONS.map((size) => <SelectItem key={size} value={String(size)}>{size} 条</SelectItem>)}</SelectContent>
-              </Select>
-              <Button aria-label="上一页" disabled={currentPage <= 1} size="icon-sm" variant="ghost" onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeftIcon /></Button>
-              <span className="min-w-12 text-center">{currentPage} / {pageCount}</span>
-              <Button aria-label="下一页" disabled={currentPage >= pageCount} size="icon-sm" variant="ghost" onClick={() => setPage((value) => Math.min(pageCount, value + 1))}><ChevronRightIcon /></Button>
-            </div>
           </div>
         </div>
       </CardContent>
       <CommandCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CommandEditDialog
+        command={editingCommand}
+        onOpenChange={(open) => !open && setEditingCommand(null)}
+        onSaved={(previous, next) =>
+          setCommandOrder((current) => current.map((item) => (item === previous ? next : item)))
+        }
+      />
     </Card>
   );
 }
@@ -131,12 +176,22 @@ export function CommandConfigPanel() {
 function SyncCommandsButton() {
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: () => apiRequest<BotCommandsResponse>("/api/bot/commands/sync", { method: "POST", body: jsonBody({}) }),
+    mutationFn: () =>
+      apiRequest<BotCommandsResponse>("/api/bot/commands/sync", {
+        method: "POST",
+        body: jsonBody({}),
+      }),
     onSuccess: (result) => {
       queryClient.setQueryData(["bot-commands"], result);
       toast.add({ type: "success", title: "指令已同步到 Telegram" });
     },
-    onError: (error) => toast.add({ type: "error", title: "同步指令失败", description: error.message }),
+    onError: (error) =>
+      toast.add({ type: "error", title: "同步指令失败", description: error.message }),
   });
-  return <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate()}><RefreshCwIcon data-icon="inline-start" />同步指令</Button>;
+  return (
+    <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+      <RefreshCwIcon data-icon="inline-start" />
+      同步指令
+    </Button>
+  );
 }

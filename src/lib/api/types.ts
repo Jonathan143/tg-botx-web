@@ -260,9 +260,11 @@ export type BotCommand = {
   type: "system" | "custom";
   description: string;
   enabled: boolean;
+  menuVisible: boolean;
   allowedRoles: Array<"anonymous" | "user" | "admin" | string>;
   executorType: "none" | "http" | "builtin_function" | "python" | "javascript";
   executorConfig: Record<string, unknown>;
+  sortOrder?: number | null;
   updatedAt?: string | null;
   syncWarning?: string;
 };

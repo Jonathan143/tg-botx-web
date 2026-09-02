@@ -2,7 +2,13 @@ import { FilterIcon, PlusIcon, SearchIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
 type CommandConfigToolbarProps = {
@@ -25,7 +31,7 @@ export function CommandConfigToolbar({
   onCreate,
 }: CommandConfigToolbarProps) {
   return (
-    <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center">
+    <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
       <Button className="w-full lg:w-auto" onClick={onCreate}>
         <PlusIcon data-icon="inline-start" />
         新增指令
@@ -67,4 +73,3 @@ export function CommandConfigToolbar({
     </div>
   );
 }
-
