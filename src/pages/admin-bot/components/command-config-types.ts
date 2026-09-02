@@ -2,7 +2,10 @@ import type { BotCommand } from "@/lib/api/types";
 
 export type CommandRole = "anonymous" | "user" | "admin";
 
-export type CommandDraft = Pick<BotCommand, "command" | "description" | "enabled" | "menuVisible"> & {
+export type CommandDraft = Pick<
+  BotCommand,
+  "command" | "description" | "enabled" | "menuVisible"
+> & {
   allowedRoles: CommandRole[];
 };
 

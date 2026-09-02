@@ -1,4 +1,4 @@
-import { FilterIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { PlusIcon, SearchIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -21,6 +21,12 @@ type CommandConfigToolbarProps = {
   onCreate: () => void;
 };
 
+const groupOptions = [
+  { label: "全部指令分组", value: "all" },
+  { label: "系统指令", value: "system" },
+  { label: "自定义指令", value: "custom" },
+];
+
 export function CommandConfigToolbar({
   search,
   onSearchChange,
@@ -31,24 +37,20 @@ export function CommandConfigToolbar({
   onCreate,
 }: CommandConfigToolbarProps) {
   return (
-    <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
-      <Button className="w-full lg:w-auto" onClick={onCreate}>
-        <PlusIcon data-icon="inline-start" />
-        新增指令
-      </Button>
-      <InputGroup className="w-full lg:max-w-md">
-        <InputGroupAddon>
-          <SearchIcon />
-        </InputGroupAddon>
-        <InputGroupInput
-          aria-label="搜索指令或说明"
-          placeholder="搜索指令或说明"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
-      </InputGroup>
-      <div className="flex flex-wrap items-center gap-3 lg:ml-auto">
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+    <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center w-full justify-between">
+      <div className="flex items-center gap-3 flex-wrap flex-1">
+        <InputGroup className="w-full lg:max-w-sm">
+          <InputGroupAddon>
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="搜索指令或说明"
+            placeholder="搜索指令或说明"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+          />
+        </InputGroup>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
           <Switch
             aria-label="仅看启用指令"
             checked={onlyEnabled}
@@ -56,20 +58,31 @@ export function CommandConfigToolbar({
           />
           仅看启用
         </label>
-        <Select value={group} onValueChange={(value) => onGroupChange(value as typeof group)}>
+        <Select
+          value={group}
+          items={groupOptions}
+          onValueChange={(value) => onGroupChange(value as typeof group)}
+        >
           <SelectTrigger aria-label="指令分组" className="min-w-36">
             <SelectValue placeholder="全部指令分组" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部指令分组</SelectItem>
-            <SelectItem value="system">系统指令</SelectItem>
-            <SelectItem value="custom">自定义指令</SelectItem>
+            {groupOptions.map((item) => (
+              <SelectItem value={item.value} key={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
-        <Button aria-label="筛选" size="icon" variant="outline">
+        {/* <Button aria-label="筛选" size="icon" variant="outline">
           <FilterIcon />
-        </Button>
+        </Button> */}
       </div>
+
+      <Button className="w-full lg:w-auto" onClick={onCreate}>
+        <PlusIcon data-icon="inline-start" />
+        新增指令
+      </Button>
     </div>
   );
 }

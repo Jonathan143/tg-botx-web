@@ -54,7 +54,14 @@ export function ConfirmAction({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
-        render={<Button aria-label={triggerAriaLabel} disabled={triggerDisabled} size={triggerContent ? "icon-sm" : "default"} variant={variant} />}
+        render={
+          <Button
+            aria-label={triggerAriaLabel}
+            disabled={triggerDisabled}
+            size={triggerContent ? "icon-sm" : "default"}
+            variant={variant}
+          />
+        }
       >
         {triggerContent ?? triggerLabel}
       </AlertDialogTrigger>

@@ -2,7 +2,14 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,7 +85,9 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
               value={command}
               onChange={(event) => setCommand(event.target.value.toLowerCase())}
             />
-            <p className="text-xs text-muted-foreground">仅支持小写字母、数字和下划线，最多 32 个字符。</p>
+            <p className="text-xs text-muted-foreground">
+              仅支持小写字母、数字和下划线，最多 32 个字符。
+            </p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="new-command-description">指令说明</Label>
@@ -105,8 +114,18 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
             />
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <div><Label htmlFor="new-command-menu-visible">菜单显示</Label><p className="mt-1 text-xs text-muted-foreground">控制是否出现在 Telegram 指令菜单中。</p></div>
-            <Switch id="new-command-menu-visible" aria-label="菜单显示开关" checked={menuVisible} onCheckedChange={setMenuVisible} />
+            <div>
+              <Label htmlFor="new-command-menu-visible">菜单显示</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                控制是否出现在 Telegram 指令菜单中。
+              </p>
+            </div>
+            <Switch
+              id="new-command-menu-visible"
+              aria-label="菜单显示开关"
+              checked={menuVisible}
+              onCheckedChange={setMenuVisible}
+            />
           </div>
           <div className="grid gap-3 rounded-lg border p-3">
             <div>

@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ConfirmAction } from "@/components/confirm-action";
 import { DataPagination } from "@/components/data-pagination";
@@ -172,7 +172,9 @@ export function ManagementBotPanel() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="codes">绑定码 ({codesPagination.total})</TabsTrigger>
-            <TabsTrigger value="bindings">已绑定用户 ({bindingsPagination.total})</TabsTrigger>
+            <TabsTrigger value="bindings">
+              已绑定用户 {bindingsQuery.isPending ? "" : `(${bindingsPagination.total})`}
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="codes" className="pt-4">
             <div className="flex flex-col gap-3">
