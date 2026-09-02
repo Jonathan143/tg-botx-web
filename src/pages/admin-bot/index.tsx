@@ -8,7 +8,7 @@ export default function AdminBotPage() {
     <>
       <PageHeader
         title="Telegram 管理 Bot"
-        description="管理 Bot 运行状态、指令菜单、一次性绑定码和已授权的私聊用户。"
+        description="管理 Bot 运行状态、签到积分范围、指令菜单、一次性绑定码和已授权的私聊用户。"
       />
       <Tabs defaultValue="bindings" className="w-full">
         <TabsList>

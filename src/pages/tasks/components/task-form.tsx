@@ -52,7 +52,7 @@ const defaultDefinition: TaskDefinition = {
     start_date: new Date().toISOString().slice(0, 10),
     time: "08:00",
   },
-  retry: { max_attempts: 3, backoff_seconds: [30, 60, 120] },
+  retry: { max_attempts: 1, backoff_seconds: [30, 60, 120] },
   steps: [{ ...createWorkflowStep("send_message"), text: "/start" }],
   notifications: { failure: true, success: false },
   log_bot_response: false,

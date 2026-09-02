@@ -230,6 +230,12 @@ export type BotBinding = {
   lastName: string | null;
   boundAt: string;
   role: "admin" | "user" | string;
+  points?: number;
+};
+
+export type BotCheckinConfig = {
+  minPoints: number;
+  maxPoints: number;
 };
 
 export type BotStatus = {

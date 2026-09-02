@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLineIcon, RefreshCwIcon } from "lucide-react";
+import { RefreshCwIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ErrorState, PageSkeleton } from "@/components/resource-state";
@@ -125,7 +125,7 @@ export function CommandConfigPanel() {
                 保存排序
               </Button>
             )}
-            <Button
+            {/* <Button
               size="sm"
               variant="outline"
               disabled={query.isFetching}
@@ -133,7 +133,7 @@ export function CommandConfigPanel() {
             >
               <ArrowDownToLineIcon data-icon="inline-start" />
               拉取指令
-            </Button>
+            </Button> */}
             <SyncCommandsButton />
           </div>
         </div>

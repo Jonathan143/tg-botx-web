@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ConfirmAction } from "@/components/confirm-action";
 import { DataPagination } from "@/components/data-pagination";
@@ -20,7 +20,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { apiRequest, jsonBody } from "@/lib/api/client";
-import type { BotBindingCodesResponse, BotBindingsResponse } from "@/lib/api/types";
+import type {
+  BotBindingCodesResponse,
+  BotBindingsResponse,
+  BotCheckinConfig,
+} from "@/lib/api/types";
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
   dateStyle: "medium",
@@ -45,6 +49,8 @@ export function ManagementBotPanel() {
   const [activeTab, setActiveTab] = useState("codes");
   const [codesPage, setCodesPage] = useState(1);
   const [bindingsPage, setBindingsPage] = useState(1);
+  const [minPoints, setMinPoints] = useState(1);
+  const [maxPoints, setMaxPoints] = useState(10);
   const pageSize = 20;
   const queryClient = useQueryClient();
   const codesQuery = useQuery({
@@ -62,6 +68,32 @@ export function ManagementBotPanel() {
       apiRequest<BotBindingsResponse>(
         `/api/bot/bindings?page=${bindingsPage}&pageSize=${pageSize}`,
       ),
+  });
+  const checkinConfigQuery = useQuery({
+    queryKey: ["bot-checkin-config"],
+    queryFn: () => apiRequest<BotCheckinConfig>("/api/bot/checkin-config"),
+  });
+  useEffect(() => {
+    const config = checkinConfigQuery.data;
+    if (config) {
+      setMinPoints(config.minPoints);
+      setMaxPoints(config.maxPoints);
+    }
+  }, [checkinConfigQuery.data]);
+  const checkinConfigMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<BotCheckinConfig>("/api/bot/checkin-config", {
+        method: "PATCH",
+        body: jsonBody({ minPoints, maxPoints }),
+      }),
+    onSuccess: (config) => {
+      setMinPoints(config.minPoints);
+      setMaxPoints(config.maxPoints);
+      queryClient.setQueryData(["bot-checkin-config"], config);
+      toast.add({ type: "success", title: "签到积分范围已保存" });
+    },
+    onError: (error) =>
+      toast.add({ type: "error", title: "保存签到配置失败", description: error.message }),
   });
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -169,6 +201,54 @@ export function ManagementBotPanel() {
             </AlertDescription>
           </Alert>
         ) : null}
+        <div className="rounded-xl border p-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-medium">签到积分范围</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                绑定用户每天可签到一次，随机获得此范围内的积分（含首尾）。
+              </p>
+            </div>
+            <div className="flex items-end gap-2">
+              <label className="grid gap-1 text-xs text-muted-foreground">
+                最小值
+                <Input
+                  type="number"
+                  min={1}
+                  max={1000000}
+                  value={minPoints}
+                  onChange={(event) => setMinPoints(Math.max(1, Number(event.target.value) || 1))}
+                  className="w-24"
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-muted-foreground">
+                最大值
+                <Input
+                  type="number"
+                  min={1}
+                  max={1000000}
+                  value={maxPoints}
+                  onChange={(event) => setMaxPoints(Math.max(1, Number(event.target.value) || 1))}
+                  className="w-24"
+                />
+              </label>
+              <Button
+                size="sm"
+                disabled={
+                  checkinConfigMutation.isPending ||
+                  checkinConfigQuery.isPending ||
+                  minPoints > maxPoints
+                }
+                onClick={() => checkinConfigMutation.mutate()}
+              >
+                保存
+              </Button>
+            </div>
+          </div>
+          {minPoints > maxPoints ? (
+            <p className="mt-2 text-xs text-destructive">最小值不能大于最大值。</p>
+          ) : null}
+        </div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="codes">绑定码 ({codesPagination.total})</TabsTrigger>
@@ -254,6 +334,7 @@ export function ManagementBotPanel() {
                       <span className="ml-3 text-muted-foreground">
                         绑定于 {formatDate(binding.boundAt)}
                       </span>
+                      <span className="ml-3 text-muted-foreground">积分 {binding.points ?? 0}</span>
                     </div>
                     <ConfirmAction
                       title="解除该用户绑定？"
