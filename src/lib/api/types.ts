@@ -257,9 +257,12 @@ export type BotBindingsResponse = BotStatus & {
 
 export type BotCommand = {
   command: string;
+  type: "system" | "custom";
   description: string;
   enabled: boolean;
   allowedRoles: Array<"anonymous" | "user" | "admin" | string>;
+  executorType: "none" | "http" | "builtin_function" | "python" | "javascript";
+  executorConfig: Record<string, unknown>;
   syncWarning?: string;
 };
 

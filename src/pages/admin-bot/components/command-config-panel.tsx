@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLineIcon, RefreshCwIcon, SaveIcon } from "lucide-react";
+import { ArrowDownToLineIcon, PlusIcon, RefreshCwIcon, SaveIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ConfirmAction } from "@/components/confirm-action";
@@ -29,6 +29,8 @@ export function CommandConfigPanel() {
     queryFn: () => apiRequest<BotCommandsResponse>("/api/bot/commands"),
   });
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [newCommand, setNewCommand] = useState("");
+  const [newDescription, setNewDescription] = useState("");
 
   useEffect(() => {
     if (!query.data) return;
@@ -113,6 +115,28 @@ export function CommandConfigPanel() {
     onError: (error) =>
       toast.add({ type: "error", title: "删除指令失败", description: error.message }),
   });
+  const createMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<BotCommand>("/api/bot/commands", {
+        method: "POST",
+        body: jsonBody({
+          command: newCommand.trim(),
+          description: newDescription.trim(),
+          enabled: false,
+          allowedRoles: [],
+          executorType: "none",
+          executorConfig: {},
+        }),
+      }),
+    onSuccess: () => {
+      setNewCommand("");
+      setNewDescription("");
+      queryClient.invalidateQueries({ queryKey: ["bot-commands"] });
+      toast.add({ type: "success", title: "自定义指令已新增" });
+    },
+    onError: (error) =>
+      toast.add({ type: "error", title: "新增指令失败", description: error.message }),
+  });
 
   if (query.isPending && !query.data) return <PageSkeleton />;
   if (query.isError && !query.data)
@@ -144,6 +168,29 @@ export function CommandConfigPanel() {
             </Button>
           </div>
         </div>
+        <div className="mt-4 flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-end">
+          <Input
+            aria-label="新指令名称"
+            maxLength={32}
+            placeholder="新指令名称（如 report）"
+            value={newCommand}
+            onChange={(event) => setNewCommand(event.target.value.toLowerCase())}
+          />
+          <Input
+            aria-label="新指令说明"
+            maxLength={256}
+            placeholder="指令说明"
+            value={newDescription}
+            onChange={(event) => setNewDescription(event.target.value)}
+          />
+          <Button
+            disabled={createMutation.isPending || !newCommand.trim() || !newDescription.trim()}
+            onClick={() => createMutation.mutate()}
+          >
+            <PlusIcon data-icon="inline-start" />
+            新增自定义指令
+          </Button>
+        </div>
         <CardDescription>
           控制 Telegram 菜单中展示的指令、说明及可调用身份。保存只更新数据库配置，请通过“手动同步指令”
           应用菜单变更到 Telegram；权限变更会立即生效。
@@ -171,6 +218,7 @@ export function CommandConfigPanel() {
               >
                 <div className="flex min-w-28 items-center gap-2">
                   <code className="text-sm font-semibold">/{item.command}</code>
+                  <Badge variant="outline">{item.type === "system" ? "系统" : "自定义"}</Badge>
                   <Badge variant={draft.enabled ? "default" : "secondary"}>
                     {draft.enabled ? "启用" : "停用"}
                   </Badge>
@@ -227,8 +275,7 @@ export function CommandConfigPanel() {
                   disabled={
                     !changed ||
                     mutation.isPending ||
-                    !draft.description.trim() ||
-                    draft.allowedRoles.length === 0
+                    !draft.description.trim()
                   }
                   size="sm"
                   onClick={() =>
@@ -241,16 +288,16 @@ export function CommandConfigPanel() {
                   <SaveIcon data-icon="inline-start" />
                   保存
                 </Button>
-                <ConfirmAction
+                {item.type === "custom" && <ConfirmAction
                   actionLabel="确认删除"
-                  description={`删除 /${item.command} 后，它会从本地配置中停用；同步指令后才会从 Telegram 菜单移除。`}
+                  description={`删除 /${item.command} 后会移除本地自定义指令配置；如需应用菜单变更，请再同步指令。`}
                   title={`删除 /${item.command} 指令？`}
                   triggerLabel="删除"
                   variant="destructive"
                   onConfirm={async () => {
                     await deleteMutation.mutateAsync(item.command);
                   }}
-                />
+                />}
               </div>
             );
           })}
