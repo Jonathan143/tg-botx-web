@@ -1,12 +1,16 @@
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { apiRequest, jsonBody } from "@/lib/api/client";
 import type { BotCommand } from "@/lib/api/types";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/components/ui/toast";
+import { ROLE_OPTIONS, type CommandRole } from "./command-config-types";
 
 type CommandCreateDialogProps = {
   open: boolean;
@@ -17,6 +21,10 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
   const queryClient = useQueryClient();
   const [command, setCommand] = useState("");
   const [description, setDescription] = useState("");
+  const [enabled, setEnabled] = useState(false);
+  const [allowedRoles, setAllowedRoles] = useState<CommandRole[]>(
+    ROLE_OPTIONS.map((option) => option.value),
+  );
   const mutation = useMutation({
     mutationFn: () =>
       apiRequest<BotCommand>("/api/bot/commands", {
@@ -24,8 +32,8 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
         body: jsonBody({
           command: command.trim(),
           description: description.trim(),
-          enabled: false,
-          allowedRoles: [],
+          enabled,
+          allowedRoles,
           executorType: "none",
           executorConfig: {},
         }),
@@ -33,6 +41,8 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
     onSuccess: () => {
       setCommand("");
       setDescription("");
+      setEnabled(false);
+      setAllowedRoles(ROLE_OPTIONS.map((option) => option.value));
       onOpenChange(false);
       queryClient.invalidateQueries({ queryKey: ["bot-commands"] });
       toast.add({ type: "success", title: "自定义指令已新增" });
@@ -77,6 +87,44 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
               onChange={(event) => setDescription(event.target.value)}
             />
           </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <Label htmlFor="new-command-enabled">启用开关</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                启用后指令会进入 Telegram 菜单并允许调用。
+              </p>
+            </div>
+            <Switch
+              id="new-command-enabled"
+              aria-label="菜单可见 / 启用开关"
+              checked={enabled}
+              onCheckedChange={setEnabled}
+            />
+          </div>
+          <div className="grid gap-3 rounded-lg border p-3">
+            <div>
+              <Label>可调用身份</Label>
+              <p className="mt-1 text-xs text-muted-foreground">选择允许直接调用该指令的身份。</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {ROLE_OPTIONS.map((option) => (
+                <label className="flex items-center gap-2 text-sm" key={option.value}>
+                  <Checkbox
+                    aria-label={`${option.label}可调用`}
+                    checked={allowedRoles.includes(option.value)}
+                    onCheckedChange={(checked) =>
+                      setAllowedRoles((current) =>
+                        checked
+                          ? [...new Set([...current, option.value])]
+                          : current.filter((role) => role !== option.value),
+                      )
+                    }
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button disabled={mutation.isPending} variant="outline" onClick={() => close(false)}>
@@ -93,4 +141,3 @@ export function CommandCreateDialog({ open, onOpenChange }: CommandCreateDialogP
     </Dialog>
   );
 }
-
