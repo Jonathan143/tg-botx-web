@@ -29,7 +29,7 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,9 +62,9 @@ import {
   createWorkflowStep,
   ensureWorkflowNodeIds,
   normalizeConditionStep,
+  variablesBeforeStep,
   type WorkflowStep,
   type WorkflowVariableDefinition,
-  variablesBeforeStep,
   waitBeforeStep,
 } from "@/lib/workflow-condition";
 
@@ -561,12 +561,15 @@ function MatcherField({
   const [modeOverride, setModeOverride] = useState<MatcherMode | null>(null);
   const mode = matcher == null ? (modeOverride ?? parsedMatcher.mode) : parsedMatcher.mode;
   const { values } = parsedMatcher;
-  const valueKeyCounts = new Map<string, number>();
-  const valueEntries = values.map((value) => {
-    const valueOccurrence = valueKeyCounts.get(value) ?? 0;
-    valueKeyCounts.set(value, valueOccurrence + 1);
-    return { value, key: `${id}-${JSON.stringify([value, valueOccurrence])}` };
-  });
+  const entryKeysRef = useRef<string[]>([]);
+  const nextEntryIdRef = useRef(0);
+  while (entryKeysRef.current.length < values.length) {
+    entryKeysRef.current.push(`${id}-${nextEntryIdRef.current}`);
+    nextEntryIdRef.current += 1;
+  }
+  if (entryKeysRef.current.length > values.length) {
+    entryKeysRef.current.length = values.length;
+  }
   const updateMatcher = (nextValues: string[], nextMode: MatcherMode) => {
     const cleanValues = nextValues.filter((value) => value.length > 0);
     if (cleanValues.length === 0) {
@@ -601,12 +604,12 @@ function MatcherField({
         ))}
       </ToggleGroup>
       <div className="flex flex-col gap-2">
-        {valueEntries.map((entry, index) => (
-          <div className="flex gap-2" key={entry.key}>
+        {values.map((value, index) => (
+          <div className="flex gap-2" key={entryKeysRef.current[index]}>
             <Input
               id={`${id}-${index}`}
               aria-label={`${label} ${index + 1}`}
-              value={entry.value}
+              value={value}
               onChange={(event) => {
                 const nextValues = [...values];
                 nextValues[index] = event.target.value;
@@ -619,12 +622,13 @@ function MatcherField({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() =>
+                onClick={() => {
+                  entryKeysRef.current.splice(index, 1);
                   updateMatcher(
                     values.filter((_, itemIndex) => itemIndex !== index),
                     mode,
-                  )
-                }
+                  );
+                }}
               >
                 移除
               </Button>
