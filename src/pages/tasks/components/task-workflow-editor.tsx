@@ -9,7 +9,6 @@ import {
   Handle,
   type Node,
   type NodeProps,
-  type OnNodeDrag,
   Position,
   ReactFlow,
 } from "@xyflow/react";
@@ -20,7 +19,6 @@ import {
   CircleAlert,
   Flag,
   GitBranch,
-  GripVertical,
   type LucideIcon,
   MessageCircle,
   MousePointerClick,
@@ -303,9 +301,6 @@ function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
     >
       <Handle type="target" position={Position.Left} className="!size-2 !border-0 !bg-primary" />
       <div className="flex items-start gap-2">
-        <div className="mt-0.5 cursor-grab text-muted-foreground" title="拖拽调整顺序">
-          <GripVertical />
-        </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">步骤 {data.index + 1}</span>
@@ -983,7 +978,7 @@ export function TaskWorkflowEditor({
             onMove: move,
             onDelete: remove,
           },
-          draggable: !isMobile && !readOnly,
+          draggable: false,
         };
       }),
       {
@@ -1015,17 +1010,6 @@ export function TaskWorkflowEditor({
     animated: run?.status === "running",
     data: { insertIndex: edge.insertIndex, readOnly, onInsert: insert },
   }));
-  const handleNodeDragStop: OnNodeDrag<WorkflowCanvasNode> = (_event, node) => {
-    if (isMobile || steps.length < 2) return;
-    if (!("index" in node.data)) return;
-    const center = node.position.x + 128;
-    const nextIndex = Math.max(0, Math.min(steps.length - 1, Math.round((center - 348) / 300)));
-    if (nextIndex === node.data.index) return;
-    const next = [...steps];
-    const [item] = next.splice(node.data.index, 1);
-    next.splice(nextIndex, 0, item);
-    emitChange(next);
-  };
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1039,8 +1023,7 @@ export function TaskWorkflowEditor({
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             nodesConnectable={false}
-            nodesDraggable={!isMobile && !readOnly}
-            onNodeDragStop={readOnly ? undefined : handleNodeDragStop}
+            nodesDraggable={false}
             fitView
             panOnDrag
             zoomOnScroll

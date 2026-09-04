@@ -54,8 +54,12 @@ export function ExtractionCard({
                 value={extract.name}
                 disabled={readOnly}
                 onChange={(event) => onChange({ ...extract, name: event.target.value })}
-                placeholder="例如：balance"
+                placeholder="例如：balance 或 account_id"
               />
+              <FieldDescription>
+                支持 snake_case 或 camelCase；以字母或下划线开头，最多 64
+                个字符，不能使用保留关键字。
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel>提取方式</FieldLabel>

@@ -110,6 +110,21 @@ describe("workflow condition helpers", () => {
     expect(messages).toContain("正则表达式最多 500 个字符。");
   });
 
+  it("按 Python/JavaScript 标识符规范校验用户自定义提取变量名", () => {
+    const condition = createDefaultConditionStep();
+    condition.extracts[0].name = "class";
+
+    expect(validateConditionStep(condition).map((issue) => issue.message)).toContain(
+      "变量名不能使用 Python/JavaScript 保留关键字。",
+    );
+
+    condition.extracts[0].name = "account_id";
+    const conditionRule = condition.branches[0].conditions?.[0];
+    if (!conditionRule) throw new Error("默认条件规则缺失");
+    conditionRule.variable = "account_id";
+    expect(validateConditionStep(condition)).toEqual([]);
+  });
+
   it("只把所有互斥分支都定义的同类型变量带到后续路径", () => {
     const condition = createDefaultConditionStep();
     for (const [index, branch] of condition.branches.entries()) {

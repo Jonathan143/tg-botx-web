@@ -115,7 +115,7 @@ export function TaskOverview({
               <div className="grid gap-1">
                 <CardTitle>工作流</CardTitle>
                 <CardDescription>
-                  点击节点编辑步骤，拖拽调整顺序；任务元信息可在配置弹框中维护。
+                  点击节点编辑步骤，可使用节点内的上下按钮调整顺序；任务元信息可在配置弹框中维护。
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">

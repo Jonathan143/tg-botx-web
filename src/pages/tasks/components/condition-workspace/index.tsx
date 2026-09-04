@@ -32,7 +32,6 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +49,13 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { TaskRunLog, TaskRunProgress, TaskStepStatus } from "@/lib/api/types";
@@ -58,6 +64,7 @@ import {
   type ConditionBranch,
   type ConditionPathSegment,
   type ConditionStep,
+  type ConditionValidationIssue,
   createDefaultRule,
   getNestedCondition,
   normalizeConditionStep,
@@ -79,6 +86,113 @@ import {
   type DeleteRequest,
   keyedEntries,
 } from "./types";
+
+function ConditionValidationSummary({
+  condition,
+  issues,
+}: {
+  condition: ConditionStep;
+  issues: ConditionValidationIssue[];
+}) {
+  if (issues.length === 0) return <div></div>;
+
+  if (issues.length === 1) {
+    return (
+      <div
+        className="flex min-w-0 flex-1 items-center gap-2 text-sm text-destructive"
+        role="status"
+      >
+        <AlertTriangle aria-hidden="true" />
+        <span>{formatConditionIssue(condition, issues[0])}</span>
+      </div>
+    );
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={200}
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-auto min-w-0 justify-start px-0 text-destructive! hover:text-destructive!"
+          />
+        }
+      >
+        <AlertTriangle data-icon="inline-start" />
+        <span>还需完成 {issues.length} 项配置</span>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="max-h-72 overflow-y-auto">
+        <PopoverHeader>
+          <PopoverTitle>配置错误（按分支）</PopoverTitle>
+        </PopoverHeader>
+        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-destructive">
+          {issues.map((issue, index) => (
+            <li key={`${issue.path}-${issue.message}-${index}`}>
+              {formatConditionIssue(condition, issue)}
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function scopeConditionIssues(
+  issues: ConditionValidationIssue[],
+  path: ConditionPathSegment[],
+): ConditionValidationIssue[] {
+  const prefix = path.reduce(
+    (value, segment) => `${value}branches.${segment.branchIndex}.steps.${segment.stepIndex}.`,
+    "",
+  );
+  if (!prefix) return issues;
+  return issues.flatMap((issue) =>
+    issue.path.startsWith(prefix) ? [{ ...issue, path: issue.path.slice(prefix.length) }] : [],
+  );
+}
+
+function issueBranchLabels(condition: ConditionStep, issuePath: string): string[] {
+  const segments = issuePath.split(".");
+  const labels: string[] = [];
+  let current = condition;
+
+  for (let index = 0; index < segments.length - 1; ) {
+    if (segments[index] !== "branches") {
+      index += 1;
+      continue;
+    }
+    const branchIndex = Number(segments[index + 1]);
+    const branch = current.branches[branchIndex];
+    if (!branch || !Number.isInteger(branchIndex)) break;
+    labels.push(branchLabel(branch, branchIndex));
+    index += 2;
+
+    if (segments[index] !== "steps") break;
+    const stepIndex = Number(segments[index + 1]);
+    const nested = branch.steps[stepIndex];
+    if (!nested || !Number.isInteger(stepIndex) || nested.type !== "condition") break;
+    current = normalizeConditionStep(nested);
+    index += 2;
+  }
+
+  return labels;
+}
+
+function formatConditionIssue(condition: ConditionStep, issue: ConditionValidationIssue): string {
+  const labels = issueBranchLabels(condition, issue.path);
+  if (labels.length > 0) return `${labels.join(" / ")}：${issue.message}`;
+  return `${issue.path.startsWith("branches") ? "分支配置" : "全局配置"}：${issue.message}`;
+}
+
+function branchIssueCount(issues: ConditionValidationIssue[], branchIndex: number): number {
+  const prefix = `branches.${branchIndex}`;
+  return issues.filter((issue) => issue.path === prefix || issue.path.startsWith(`${prefix}.`))
+    .length;
+}
 
 export function ConditionWorkspace({
   step,
@@ -142,6 +256,15 @@ export function ConditionWorkspace({
   const issues = useMemo(
     () => (draft ? validateConditionStep(draft, 1, availableVariables, hasPriorWait) : []),
     [availableVariables, draft, hasPriorWait],
+  );
+  const scopedIssues = useMemo(() => scopeConditionIssues(issues, path), [issues, path]);
+  const branchIssueCounts = useMemo(
+    () => current?.branches.map((_, index) => branchIssueCount(scopedIssues, index)) ?? [],
+    [current, scopedIssues],
+  );
+  const globalIssueCount = useMemo(
+    () => scopedIssues.filter((issue) => !issue.path.startsWith("branches.")).length,
+    [scopedIssues],
   );
   const currentHasWait = useMemo(
     () => (draft ? waitAtConditionPath(draft, path, hasPriorWait) : hasPriorWait),
@@ -322,7 +445,10 @@ export function ConditionWorkspace({
                     onClick={() => setActivePanel("global")}
                   >
                     <Settings2 data-icon="inline-start" />
-                    全局配置
+                    <span className="min-w-0 flex-1">全局配置</span>
+                    {!readOnly && globalIssueCount > 0 ? (
+                      <Badge variant="destructive">{globalIssueCount}</Badge>
+                    ) : null}
                   </Button>
                 </div>
                 <div className="flex items-center justify-between gap-2 border-b px-3 py-3">
@@ -345,6 +471,7 @@ export function ConditionWorkspace({
                     ({ item: branch, index, key }) => {
                       const selected = activePanel === "branch" && index === activeBranch;
                       const selectedAtRuntime = currentRunStatus?.selectedBranch?.index === index;
+                      const branchIssues = branchIssueCounts[index] ?? 0;
                       return (
                         <Button
                           key={key}
@@ -369,7 +496,16 @@ export function ConditionWorkspace({
                                 : ""}
                             </span>
                           </span>
-                          {selectedAtRuntime ? (
+                          {!readOnly && branchIssues > 0 ? (
+                            <span
+                              className="flex shrink-0 items-center gap-1 text-destructive"
+                              role="img"
+                              aria-label={`${branchIssues} 项配置错误`}
+                            >
+                              <AlertTriangle aria-hidden="true" />
+                              <Badge variant="destructive">{branchIssues}</Badge>
+                            </span>
+                          ) : selectedAtRuntime ? (
                             <Badge variant="secondary">已命中</Badge>
                           ) : currentRunStatus?.selectedBranch ? (
                             <Badge variant="outline">已跳过</Badge>
@@ -558,24 +694,6 @@ export function ConditionWorkspace({
                       </FieldSet>
                     </>
                   )}
-
-                  {issues.length > 0 && !readOnly ? (
-                    <Card size="sm">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-destructive">
-                          <AlertTriangle aria-hidden="true" />
-                          还需完成 {issues.length} 项配置
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-destructive">
-                          {issues.slice(0, 8).map((issue) => (
-                            <li key={`${issue.path}-${issue.message}`}>{issue.message}</li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  ) : null}
                 </div>
               </main>
             </div>
@@ -585,16 +703,23 @@ export function ConditionWorkspace({
             </div>
           )}
 
-          <DialogFooter className="m-0 rounded-none px-4 py-3">
-            <Button type="button" variant="outline" onClick={requestClose}>
-              {readOnly ? "关闭" : "取消"}
-            </Button>
-            {!readOnly ? (
-              <Button type="button" onClick={apply} disabled={!draft || issues.length > 0}>
-                <CheckCircle2 data-icon="inline-start" />
-                应用条件配置
+          <DialogFooter className="m-0 items-center rounded-none px-4 py-3 sm:justify-between">
+            {!readOnly && current ? (
+              <ConditionValidationSummary condition={current} issues={scopedIssues} />
+            ) : (
+              <div></div>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button type="button" variant="outline" onClick={requestClose}>
+                {readOnly ? "关闭" : "取消"}
               </Button>
-            ) : null}
+              {!readOnly ? (
+                <Button type="button" onClick={apply} disabled={!draft || issues.length > 0}>
+                  <CheckCircle2 data-icon="inline-start" />
+                  应用条件配置
+                </Button>
+              ) : null}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

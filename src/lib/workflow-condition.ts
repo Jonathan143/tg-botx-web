@@ -158,6 +158,72 @@ export const CONDITION_OPERATORS: Record<
 };
 
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const VARIABLE_RESERVED_WORDS = new Set([
+  "False",
+  "None",
+  "True",
+  "and",
+  "as",
+  "assert",
+  "async",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "def",
+  "default",
+  "delete",
+  "del",
+  "do",
+  "else",
+  "elif",
+  "enum",
+  "except",
+  "export",
+  "extends",
+  "finally",
+  "for",
+  "from",
+  "function",
+  "global",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "is",
+  "lambda",
+  "let",
+  "new",
+  "nonlocal",
+  "not",
+  "null",
+  "or",
+  "package",
+  "pass",
+  "private",
+  "protected",
+  "public",
+  "raise",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+]);
 const LENGTH_OPERATORS = new Set([
   "length_eq",
   "length_ne",
@@ -559,8 +625,11 @@ export function validateConditionStep(
     if (!VARIABLE_NAME.test(extract.name) || extract.name.startsWith("__")) {
       add(
         `${path}.name`,
-        "变量名须以英文字母或下划线开头，只含英文、数字、下划线，最多 64 字符，且不能使用 __ 前缀。",
+        "变量名须符合 Python/JavaScript 标识符规范：以英文字母或下划线开头，只含英文、数字、下划线，最多 64 个字符，且不能使用 __ 前缀。",
       );
+    }
+    if (VARIABLE_RESERVED_WORDS.has(extract.name)) {
+      add(`${path}.name`, "变量名不能使用 Python/JavaScript 保留关键字。");
     }
     if (variables.has(extract.name)) add(`${path}.name`, "变量名不能重复。");
     variables.set(extract.name, extract.value_type);
