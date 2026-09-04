@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlusIcon } from "lucide-react";
 import { useDeferredValue, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { DataPagination } from "@/components/data-pagination";
 import { PageHeader } from "@/components/page-header";
@@ -15,6 +15,7 @@ import { TaskFilters } from "./components/task-filters";
 import { TaskTable } from "./components/task-table";
 
 export default function TasksPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -99,6 +100,11 @@ export default function TasksPage() {
             }
             onToggle={(task) => toggleMutation.mutate(task)}
             onSkipNext={(task) => skipNextMutation.mutate(task)}
+            onCopy={(task) =>
+              navigate(`/tasks/new?copyFrom=${encodeURIComponent(task.id)}`, {
+                state: { definition: task.definition, sourceTaskName: task.name },
+              })
+            }
             onExport={(task) =>
               downloadFromApi(`/api/tasks/${task.id}/export`, `${task.name}.yaml`)
             }

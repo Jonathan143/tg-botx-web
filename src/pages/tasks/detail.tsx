@@ -21,22 +21,7 @@ import type { Account, Paginated, Task, TaskDefinition } from "@/lib/api/types";
 import { TaskActions } from "./components/task-actions";
 import { TaskForm } from "./components/task-form";
 import { TaskOverview } from "./components/task-overview";
-
-function definitionFromTask(task: Task): TaskDefinition {
-  return (
-    task.definition ?? {
-      name: task.name,
-      account: task.account,
-      target: task.target,
-      schedule: task.schedule,
-      retry: { max_attempts: 3, backoff_seconds: [30, 60, 120] },
-      steps: [],
-      notifications: { failure: true, success: false },
-      log_bot_response: false,
-      notify_bot_response: false,
-    }
-  );
-}
+import { definitionFromTask } from "./task-definition";
 
 export default function TaskDetailPage() {
   const { taskId } = useParams();

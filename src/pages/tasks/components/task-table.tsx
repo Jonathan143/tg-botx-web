@@ -1,6 +1,7 @@
 import {
   CirclePauseIcon,
   CirclePlayIcon,
+  CopyIcon,
   DownloadIcon,
   EyeIcon,
   MoreHorizontalIcon,
@@ -33,11 +34,13 @@ export function TaskTable({
   tasks,
   onToggle,
   onSkipNext,
+  onCopy,
   onExport,
 }: {
   tasks: Task[];
   onToggle: (task: Task) => void;
   onSkipNext: (task: Task) => void;
+  onCopy?: (task: Task) => void;
   onExport: (task: Task) => void;
 }) {
   if (tasks.length === 0) {
@@ -101,6 +104,12 @@ export function TaskTable({
                         <EyeIcon />
                         查看详情
                       </DropdownMenuItem>
+                      {onCopy ? (
+                        <DropdownMenuItem onClick={() => onCopy(task)}>
+                          <CopyIcon />
+                          复制配置
+                        </DropdownMenuItem>
+                      ) : null}
                       {!task.archived ? (
                         <DropdownMenuItem onClick={() => onToggle(task)}>
                           {task.enabled ? <CirclePauseIcon /> : <CirclePlayIcon />}
