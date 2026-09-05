@@ -37,7 +37,11 @@ import type {
   TaskRunProgress,
 } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
-import { createWorkflowStep, normalizeConditionStep } from "@/lib/workflow-condition";
+import {
+  createWorkflowStep,
+  normalizeConditionStep,
+  validateWorkflowConditions,
+} from "@/lib/workflow-condition";
 import { TaskTargetPicker } from "./task-target-picker";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 
@@ -267,6 +271,10 @@ export function TaskForm({
     }
     if (!Array.isArray(next.steps) || next.steps.length === 0) {
       throw new Error("至少需要配置一个执行步骤。");
+    }
+    const conditionIssues = validateWorkflowConditions(next.steps);
+    if (conditionIssues.length > 0) {
+      throw new Error(conditionIssues.map((issue) => `${issue.path}：${issue.message}`).join("\n"));
     }
     if (
       !Number.isInteger(next.retry.max_attempts) ||

@@ -55,6 +55,29 @@ describe("ConditionWorkspace", () => {
     expect(screen.queryByText("还需完成 1 项配置")).toBeNull();
   });
 
+  it("输入无效正则时即时提示并禁止应用", () => {
+    const step = createDefaultConditionStep();
+    step.extracts[0] = {
+      ...step.extracts[0],
+      mode: "regex_capture",
+      pattern: "余额：([\\d,]+",
+      capture_group: 1,
+    };
+
+    render(
+      <ConditionWorkspace
+        step={step}
+        open
+        onOpenChange={vi.fn()}
+        onApply={vi.fn()}
+        renderSequence={() => <p>分支子画布</p>}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("正则表达式语法无效");
+    expect(screen.getByRole("button", { name: "应用条件配置" })).toBeDisabled();
+  });
+
   it("将多条配置错误收纳到 popover", () => {
     const step = createDefaultConditionStep();
     step.branches.splice(1, 0, {

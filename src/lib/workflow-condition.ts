@@ -82,6 +82,45 @@ export const CONDITION_LIMITS = {
   nestingDepth: 3,
 } as const;
 
+/**
+ * Return a user-facing error when a regex cannot be parsed by the browser.
+ *
+ * The backend remains the source of truth (it uses Python's `regex` engine),
+ * but compiling here catches the common syntax mistakes while the workflow is
+ * being edited instead of waiting for a save request to fail.
+ */
+export function getRegexSyntaxError(
+  pattern: string,
+  config?: Pick<ConditionRegexConfig, "ignore_case" | "multiline">,
+): string | null {
+  if (!pattern) return null;
+  const flags = `${config?.ignore_case ? "i" : ""}${config?.multiline ? "m" : ""}`;
+  try {
+    void new RegExp(pattern, flags);
+    return null;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "";
+    return detail ? `正则表达式语法无效：${detail}` : "正则表达式语法无效。";
+  }
+}
+
+/**
+ * Validate the constraints shared by regex input fields.
+ *
+ * Empty values and the length limit are kept here as well so field-level
+ * feedback and the condition workspace summary cannot drift apart.
+ */
+export function validateRegexPattern(
+  pattern: string,
+  config?: Pick<ConditionRegexConfig, "ignore_case" | "multiline">,
+): string | null {
+  if (!pattern) return "请输入正则表达式。";
+  if (pattern.length > CONDITION_LIMITS.regexLength) {
+    return `正则表达式最多 ${CONDITION_LIMITS.regexLength} 个字符。`;
+  }
+  return getRegexSyntaxError(pattern, config);
+}
+
 export const CONDITION_METADATA_FIELDS: Array<{
   value: string;
   label: string;
@@ -643,10 +682,9 @@ export function validateConditionStep(
       add(`${path}.field`, "请选择受支持的消息元数据字段。");
     }
     if (extract.mode === "regex_capture") {
-      if (!extract.pattern) add(`${path}.pattern`, "请输入正则表达式。");
-      if ((extract.pattern?.length ?? 0) > CONDITION_LIMITS.regexLength) {
-        add(`${path}.pattern`, "正则表达式最多 500 个字符。");
-      }
+      const pattern = typeof extract.pattern === "string" ? extract.pattern : "";
+      const regexIssue = validateRegexPattern(pattern, extract.regex);
+      if (regexIssue) add(`${path}.pattern`, regexIssue);
       if (
         extract.capture_group === "" ||
         (typeof extract.capture_group === "number" && extract.capture_group < 0)
@@ -689,9 +727,10 @@ export function validateConditionStep(
         }
         if (rule.operator === "regex") {
           const first = rule.operands[0];
-          const pattern = first?.source === "literal" ? first.value : "";
-          if (first?.source === "literal" && pattern.length > CONDITION_LIMITS.regexLength) {
-            add(`${rulePath}.operands.0`, "正则表达式最多 500 个字符。");
+          if (first?.source === "literal") {
+            const pattern = typeof first.value === "string" ? first.value : "";
+            const regexIssue = validateRegexPattern(pattern, rule.regex);
+            if (regexIssue) add(`${rulePath}.operands.0`, regexIssue);
           }
         }
       });
@@ -713,5 +752,38 @@ export function validateConditionStep(
       branchHasWait = workflowHasWait([nested], branchHasWait);
     });
   });
+  return issues;
+}
+
+/**
+ * Validate every condition node in a workflow, including top-level nodes.
+ *
+ * The condition workspace validates its currently open node. This companion
+ * helper covers the whole definition so YAML mode and direct form submission
+ * cannot bypass the same regex checks.
+ */
+export function validateWorkflowConditions(
+  steps: WorkflowStep[],
+  inheritedVariables: WorkflowVariableDefinition[] = [],
+  inheritedWait = false,
+): ConditionValidationIssue[] {
+  const issues: ConditionValidationIssue[] = [];
+  let variables = inheritedVariables;
+  let hasWait = inheritedWait;
+
+  steps.forEach((step, index) => {
+    if (step.type === "condition") {
+      const condition = normalizeConditionStep(step);
+      for (const issue of validateConditionStep(condition, 1, variables, hasWait)) {
+        issues.push({ ...issue, path: `steps.${index}.${issue.path}` });
+      }
+      variables = inferWorkflowVariables([condition], variables);
+      hasWait = workflowHasWait([condition], hasWait);
+      return;
+    }
+    variables = inferWorkflowVariables([step], variables);
+    hasWait = workflowHasWait([step], hasWait);
+  });
+
   return issues;
 }

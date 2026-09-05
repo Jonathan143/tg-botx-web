@@ -1,7 +1,7 @@
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -19,6 +19,7 @@ import {
   CONDITION_METADATA_FIELDS,
   type ConditionExtract,
   createDefaultRegexConfig,
+  validateRegexPattern,
   type WorkflowValueType,
 } from "@/lib/workflow-condition";
 
@@ -38,6 +39,8 @@ export function ExtractionCard({
   onDelete: () => void;
 }) {
   const regex = extract.regex ?? createDefaultRegexConfig();
+  const patternError =
+    extract.mode === "regex_capture" ? validateRegexPattern(extract.pattern ?? "", regex) : null;
   return (
     <Card size="sm">
       <CardHeader>
@@ -151,11 +154,17 @@ export function ExtractionCard({
                   value={extract.pattern ?? ""}
                   disabled={readOnly}
                   maxLength={CONDITION_LIMITS.regexLength}
+                  aria-invalid={Boolean(patternError)}
+                  aria-describedby={patternError ? `extract-pattern-error-${index}` : undefined}
                   onChange={(event) => onChange({ ...extract, pattern: event.target.value })}
                   placeholder="例如：余额：([\d,]+)"
                 />
+                {patternError ? (
+                  <FieldError id={`extract-pattern-error-${index}`}>{patternError}</FieldError>
+                ) : null}
                 <FieldDescription>
-                  默认搜索子串，最多 500 字符；运行时单次最多 50ms、单节点总预算 200ms。
+                  默认搜索子串，最多 500 字符；输入会即时检查正则语法，运行时单次最多
+                  50ms、单节点总预算 200ms。
                 </FieldDescription>
               </Field>
               <div className="grid gap-3 lg:grid-cols-2">

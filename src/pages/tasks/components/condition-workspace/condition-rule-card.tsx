@@ -28,6 +28,7 @@ import {
   createDefaultRule,
   operandValueType,
   reconcileRuleOperands,
+  validateRegexPattern,
   type WorkflowValueType,
 } from "@/lib/workflow-condition";
 
@@ -54,6 +55,10 @@ export function ConditionRuleCard({
   const normalization = rule.normalization ?? createDefaultNormalization();
   const regex = rule.regex ?? createDefaultRegexConfig();
   const operandType = operandValueType(rule);
+  const regexError =
+    rule.operator === "regex" && rule.operands[0]?.source === "literal"
+      ? validateRegexPattern(rule.operands[0].value, regex)
+      : null;
   const setRule = (next: ConditionRule) => onChange(reconcileRuleOperands(next));
   const variableItems = variables.map((variable) => ({
     value: variable.name,
@@ -132,6 +137,8 @@ export function ConditionRuleCard({
                     variables={variables}
                     multiple={operator.operands === "many" && rule.operands.length > 1}
                     readOnly={readOnly}
+                    error={operandIndex === 0 ? (regexError ?? undefined) : undefined}
+                    errorId={operandIndex === 0 ? `rule-${index}-regex-error` : undefined}
                     onChange={(next) =>
                       onChange({
                         ...rule,

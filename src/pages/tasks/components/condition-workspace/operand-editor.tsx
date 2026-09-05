@@ -1,6 +1,7 @@
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -23,6 +24,8 @@ export function OperandEditor({
   readOnly,
   onChange,
   onDelete,
+  error,
+  errorId,
 }: {
   operand: ConditionOperand;
   index: number;
@@ -32,6 +35,8 @@ export function OperandEditor({
   readOnly: boolean;
   onChange: (operand: ConditionOperand) => void;
   onDelete: () => void;
+  error?: string;
+  errorId?: string;
 }) {
   const compatibleVariables = variables.filter((item) => item.valueType === valueType);
   const compatibleVariableItems = compatibleVariables.map((variable) => ({
@@ -86,19 +91,24 @@ export function OperandEditor({
           </SelectContent>
         </Select>
       ) : (
-        <Input
-          aria-label={`比较值 ${index + 1}`}
-          value={operand.value}
-          disabled={readOnly}
-          onChange={(event) => onChange({ source: "literal", value: event.target.value })}
-          placeholder={
-            valueType === "number"
-              ? "支持 -1,234.50 或 1 234.50"
-              : valueType === "datetime"
-                ? "例如：2026-08-31 10:30:00"
-                : "输入比较文本"
-          }
-        />
+        <div className="min-w-0">
+          <Input
+            aria-label={`比较值 ${index + 1}`}
+            value={operand.value}
+            disabled={readOnly}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? errorId : undefined}
+            onChange={(event) => onChange({ source: "literal", value: event.target.value })}
+            placeholder={
+              valueType === "number"
+                ? "支持 -1,234.50 或 1 234.50"
+                : valueType === "datetime"
+                  ? "例如：2026-08-31 10:30:00"
+                  : "输入比较文本"
+            }
+          />
+          {error ? <FieldError id={errorId}>{error}</FieldError> : null}
+        </div>
       )}
       {multiple && !readOnly ? (
         <Button

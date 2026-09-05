@@ -8,6 +8,8 @@ import {
   normalizeConditionStep,
   updateNestedCondition,
   validateConditionStep,
+  validateRegexPattern,
+  validateWorkflowConditions,
   type WorkflowStep,
 } from "./workflow-condition";
 
@@ -108,6 +110,50 @@ describe("workflow condition helpers", () => {
     const messages = validateConditionStep(condition).map((issue) => issue.message);
     expect(messages).toContain("每个判断分支必须有 1–10 条条件。");
     expect(messages).toContain("正则表达式最多 500 个字符。");
+  });
+
+  it("在输入阶段拒绝无效正则并允许有效正则", () => {
+    expect(validateRegexPattern("余额：([\\d,]+)")).toBeNull();
+    const syntaxError = validateRegexPattern("余额：([\\d,]+");
+    expect(syntaxError?.startsWith("正则表达式语法无效：")).toBe(true);
+
+    const condition = createDefaultConditionStep();
+    condition.extracts[0] = {
+      ...condition.extracts[0],
+      mode: "regex_capture",
+      pattern: "余额：([\\d,]+",
+      capture_group: 1,
+    };
+    expect(validateConditionStep(condition).map((issue) => issue.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining("正则表达式语法无效：")]),
+    );
+
+    condition.extracts[0].pattern = "余额：([\\d,]+)";
+    expect(validateConditionStep(condition)).toEqual([]);
+  });
+
+  it("校验整个工作流时不会让 YAML 模式绕过正则检查", () => {
+    const condition = createDefaultConditionStep();
+    condition.extracts[0] = {
+      ...condition.extracts[0],
+      mode: "regex_capture",
+      pattern: "余额：([\\d,]+",
+      capture_group: 1,
+    };
+
+    const issues = validateWorkflowConditions([
+      { type: "wait_message", timeout_seconds: 60 },
+      condition,
+    ]);
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "steps.1.extracts.0.pattern",
+          message: expect.stringContaining("正则表达式语法无效："),
+        }),
+      ]),
+    );
   });
 
   it("按 Python/JavaScript 标识符规范校验用户自定义提取变量名", () => {
