@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AlertDialog,
@@ -229,6 +229,8 @@ export function ConditionWorkspace({
   const [activePanel, setActivePanel] = useState<"global" | "branch">("global");
   const [confirmClose, setConfirmClose] = useState(false);
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest>(null);
+  const [isApplying, setIsApplying] = useState(false);
+  const applyingRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -236,6 +238,8 @@ export function ConditionWorkspace({
     setPath([]);
     setActiveBranch(0);
     setActivePanel("global");
+    setIsApplying(false);
+    applyingRef.current = false;
   }, [normalized, open]);
 
   const dirty = Boolean(
@@ -301,12 +305,18 @@ export function ConditionWorkspace({
     });
   };
   const requestClose = () => {
+    if (applyingRef.current) {
+      onOpenChange(false);
+      return;
+    }
     if (!readOnly && dirty) setConfirmClose(true);
     else onOpenChange(false);
   };
   const apply = () => {
-    if (!draft || issues.length > 0) return;
-    onApply(draft);
+    if (!draft || issues.length > 0 || applyingRef.current) return;
+    applyingRef.current = true;
+    setIsApplying(true);
+    onApply(cloneCondition(draft));
     onOpenChange(false);
   };
   const addBranch = () => {
@@ -704,7 +714,7 @@ export function ConditionWorkspace({
           )}
 
           <DialogFooter className="m-0 items-center rounded-none px-4 py-3 sm:justify-between">
-            {!readOnly && current ? (
+            {!readOnly && current && !isApplying ? (
               <ConditionValidationSummary condition={current} issues={scopedIssues} />
             ) : (
               <div></div>
@@ -714,7 +724,11 @@ export function ConditionWorkspace({
                 {readOnly ? "关闭" : "取消"}
               </Button>
               {!readOnly ? (
-                <Button type="button" onClick={apply} disabled={!draft || issues.length > 0}>
+                <Button
+                  type="button"
+                  onClick={apply}
+                  disabled={isApplying || !draft || issues.length > 0}
+                >
                   <CheckCircle2 data-icon="inline-start" />
                   应用条件配置
                 </Button>

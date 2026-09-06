@@ -13,12 +13,14 @@ import {
   ReactFlow,
 } from "@xyflow/react";
 import {
+  Braces,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   CircleAlert,
   Flag,
   GitBranch,
+  Globe,
   type LucideIcon,
   MessageCircle,
   MousePointerClick,
@@ -43,6 +45,14 @@ import {
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -57,9 +67,13 @@ import type { TaskRunLog, TaskRunProgress, TaskStepStatus } from "@/lib/api/type
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
+  CONDITION_METADATA_FIELDS,
+  type ConditionExtract,
   createWorkflowStep,
   ensureWorkflowNodeIds,
   normalizeConditionStep,
+  validateRegexPattern,
+  validateWorkflowVariableName,
   variablesBeforeStep,
   type WorkflowStep,
   type WorkflowVariableDefinition,
@@ -67,6 +81,8 @@ import {
 } from "@/lib/workflow-condition";
 
 import { ConditionWorkspace } from "./condition-workspace";
+import { ExtractionFields, FieldLabelWithHint } from "./condition-workspace/extraction-card";
+import { VALUE_TYPES } from "./condition-workspace/types";
 
 import "@xyflow/react/dist/style.css";
 
@@ -126,6 +142,8 @@ const STEP_TYPES: Array<{
     description: "提取变量并按 if / else 分支执行",
     icon: GitBranch,
   },
+  { value: "http_request", label: "HTTP 请求", description: "调用外部 HTTP 接口", icon: Globe },
+  { value: "extract_variable", label: "提取变量", description: "从前置节点提取变量", icon: Braces },
 ];
 
 const stepIcon = (step: WorkflowStep) =>
@@ -171,6 +189,8 @@ const stepSummary = (step: WorkflowStep) => {
     const ifCount = condition.branches.filter((branch) => branch.kind !== "else").length;
     return `${condition.extracts.length} 个变量 · ${ifCount} 个判断分支 · 含 else`;
   }
+  if (step.type === "http_request") return `${step.method ?? "GET"} ${step.url || "待填写 URL"}`;
+  if (step.type === "extract_variable") return `{{ ${step.name || "variable"} }}`;
   return "请切换到 YAML 高级模式编辑";
 };
 
@@ -645,12 +665,125 @@ function MatcherField({
   );
 }
 
+function validateStepConfiguration(step: WorkflowStep, priorSteps: WorkflowStep[]): string[] {
+  const issues: string[] = [];
+  const add = (message: string) => issues.push(message);
+
+  if (step.type === "send_message" && (typeof step.text !== "string" || !step.text.trim())) {
+    add("请输入消息文本。");
+  }
+
+  if (step.type === "wait_message") {
+    if (!readMatcher(step.success).values.some((value) => value.trim())) {
+      add("请填写成功匹配规则。");
+    }
+    if (!Number.isInteger(step.timeout_seconds) || Number(step.timeout_seconds) < 1) {
+      add("超时必须是大于 0 的整数秒数。");
+    }
+  }
+
+  if (step.type === "click_button") {
+    const textSelectors = [step.text, step.text_contains, step.callback_data].filter(
+      (value) => typeof value === "string" && value.trim(),
+    );
+    const hasPosition =
+      Number.isInteger(step.row) &&
+      Number(step.row) >= 0 &&
+      Number.isInteger(step.column) &&
+      Number(step.column) >= 0;
+    if (textSelectors.length + Number(hasPosition) !== 1) {
+      add("请完整配置一种按钮定位方式。");
+    }
+  }
+
+  if (step.type === "http_request") {
+    if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(String(step.method ?? "GET"))) {
+      add("请选择有效的 HTTP 请求方法。");
+    }
+    if (typeof step.url !== "string" || !step.url.trim()) add("请输入请求 URL。");
+    if (step.headers !== undefined && typeof step.headers !== "string") {
+      add("请求头必须是字符串。");
+    } else if (typeof step.headers === "string" && step.headers.trim()) {
+      try {
+        const headers = JSON.parse(step.headers) as unknown;
+        if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+          add("请求头必须是 JSON 对象。");
+        }
+      } catch {
+        add("请求头必须是有效的 JSON 对象。");
+      }
+    }
+  }
+
+  if (step.type === "extract_variable") {
+    const nameIssue = validateWorkflowVariableName(String(step.name ?? ""));
+    if (nameIssue) add(nameIssue);
+    if (!["text", "number", "datetime"].includes(String(step.value_type ?? "text"))) {
+      add("请选择有效的变量类型。");
+    }
+
+    const source = String(step.source ?? "");
+    const sourceId = String(step.source_node_id ?? "");
+    if (source === "http_body") {
+      if (!sourceId) {
+        add("请选择提供数据的前置 HTTP 请求节点。");
+      } else if (
+        !priorSteps.some((item) => item.type === "http_request" && item.node_id === sourceId)
+      ) {
+        add("所选 HTTP 请求数据源节点无效，请重新选择。");
+      }
+    } else if (source === "wait_message_text") {
+      if (!sourceId) {
+        add("请选择提供数据的前置等待消息节点。");
+      } else if (
+        !priorSteps.some((item) => item.type === "wait_message" && item.node_id === sourceId)
+      ) {
+        add("所选等待消息数据源节点无效，请重新选择。");
+      }
+      const mode = String(step.mode ?? "whole_text");
+      if (!["whole_text", "first_number", "regex_capture", "metadata"].includes(mode)) {
+        add("请选择有效的提取方式。");
+      }
+      if (mode === "first_number" && step.value_type !== "number") {
+        add("首个数字提取必须保存为数值类型。");
+      }
+      if (
+        mode === "metadata" &&
+        !CONDITION_METADATA_FIELDS.some((item) => item.value === step.field)
+      ) {
+        add("请选择有效的消息元数据字段。");
+      }
+      if (mode === "regex_capture") {
+        const regexIssue = validateRegexPattern(
+          typeof step.pattern === "string" ? step.pattern : "",
+          step.regex && typeof step.regex === "object"
+            ? (step.regex as ConditionExtract["regex"])
+            : undefined,
+        );
+        if (regexIssue) add(regexIssue);
+        if (
+          step.capture_group === "" ||
+          (typeof step.capture_group === "number" && step.capture_group < 0)
+        ) {
+          add("捕获组必须是非负编号或非空名称。");
+        }
+      }
+    } else {
+      add("请选择有效的提取源类型。");
+    }
+  }
+
+  return issues;
+}
+
 function StepFields({
   step,
   onChange,
+  priorSteps = [],
 }: {
   step: WorkflowStep;
   onChange: (step: WorkflowStep) => void;
+  priorSteps?: WorkflowStep[];
 }) {
   const update = (patch: WorkflowStep) => onChange({ ...step, ...patch });
   if (step.type === "send_message") {
@@ -683,8 +816,8 @@ function StepFields({
         <MatcherField
           id="step-success"
           label="成功匹配规则"
-          description="支持包含、精确、正则和多个 OR 条件；留空表示任意新消息。"
-          placeholder="留空表示任意新消息"
+          description="必填；支持包含、精确、正则和多个 OR 条件。"
+          placeholder="请输入成功匹配内容"
           matcher={step.success}
           onChange={(success) => update({ success })}
         />
@@ -818,7 +951,278 @@ function StepFields({
       </FieldGroup>
     );
   }
-  return <FieldError>该步骤类型暂不支持可视化编辑，请切换到 YAML 高级模式。</FieldError>;
+  if (step.type === "http_request") {
+    return (
+      <FieldGroup>
+        <Field>
+          <FieldLabel>请求方法</FieldLabel>
+          <ToggleGroup
+            value={[String(step.method ?? "GET")]}
+            onValueChange={(v) => v[0] && update({ method: v[0] })}
+          >
+            <ToggleGroupItem value="GET">GET</ToggleGroupItem>
+            <ToggleGroupItem value="POST">POST</ToggleGroupItem>
+            <ToggleGroupItem value="PUT">PUT</ToggleGroupItem>
+            <ToggleGroupItem value="PATCH">PATCH</ToggleGroupItem>
+            <ToggleGroupItem value="DELETE">DELETE</ToggleGroupItem>
+          </ToggleGroup>
+        </Field>
+        <Field>
+          <FieldLabel>请求 URL</FieldLabel>
+          <Input
+            value={String(step.url ?? "")}
+            onChange={(e) => update({ url: e.target.value })}
+            placeholder="https://example.com/api"
+          />
+        </Field>
+        <Field>
+          <FieldLabel>请求头（JSON，可选）</FieldLabel>
+          <Textarea
+            value={String(step.headers ?? "")}
+            onChange={(e) => update({ headers: e.target.value })}
+            placeholder='{"Authorization":"Bearer ..."}'
+          />
+        </Field>
+        <Field>
+          <FieldLabel>请求体（可选）</FieldLabel>
+          <Textarea
+            value={String(step.body ?? "")}
+            onChange={(e) => update({ body: e.target.value })}
+          />
+        </Field>
+      </FieldGroup>
+    );
+  }
+  if (step.type === "extract_variable") {
+    const sourceType = String(step.source ?? "").startsWith("wait")
+      ? "wait_message"
+      : "http_request";
+    const candidates = priorSteps.filter(
+      (item) => item.type === (sourceType === "wait_message" ? "wait_message" : "http_request"),
+    );
+    const sourceId = String(step.source_node_id ?? "");
+    const updateSource = (value: string) =>
+      update({
+        source: value === "wait_message" ? "wait_message_text" : "http_body",
+        source_node_id: "",
+        path: "",
+      });
+    const nameError = validateWorkflowVariableName(String(step.name ?? ""));
+    const commonFields = (
+      <>
+        <Field>
+          <FieldLabelWithHint hint="必须以字母或下划线开头，只能包含字母、数字、下划线，最多 64 个字符。">
+            变量名
+          </FieldLabelWithHint>
+          <Input
+            value={String(step.name ?? "")}
+            aria-invalid={Boolean(nameError)}
+            aria-describedby={nameError ? "extract-variable-name-error" : undefined}
+            onChange={(event) => update({ name: event.target.value })}
+            placeholder="例如：user_id"
+          />
+          {nameError ? <FieldError id="extract-variable-name-error">{nameError}</FieldError> : null}
+        </Field>
+        <Field>
+          <FieldLabel>变量类型</FieldLabel>
+          <Select
+            items={VALUE_TYPES}
+            value={String(step.value_type ?? "text")}
+            disabled={step.mode === "first_number" || step.mode === "metadata"}
+            onValueChange={(value) => value && update({ value_type: value })}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {VALUE_TYPES.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+      </>
+    );
+    if (sourceType === "http_request") {
+      return (
+        <FieldGroup>
+          {commonFields}
+          <Field>
+            <FieldLabelWithHint hint="选择从前置 HTTP 请求响应，或等待消息内容中提取变量。">
+              提取源类型
+            </FieldLabelWithHint>
+            <Select
+              items={[
+                { value: "http_request", label: "HTTP 请求" },
+                { value: "wait_message", label: "等待消息" },
+              ]}
+              value={sourceType}
+              onValueChange={(value) => value && updateSource(value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="http_request">HTTP 请求</SelectItem>
+                  <SelectItem value="wait_message">等待消息</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabelWithHint hint="选择实际提供提取数据的前置节点。">
+              数据源节点
+            </FieldLabelWithHint>
+            <Select
+              items={candidates.map((item) => ({
+                value: String(item.node_id),
+                label: `${String(item.node_id)} · HTTP 请求`,
+              }))}
+              value={sourceId}
+              onValueChange={(value) => value && update({ source_node_id: value })}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="请选择前置 HTTP 节点" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {candidates.map((item) => (
+                    <SelectItem key={String(item.node_id)} value={String(item.node_id)}>
+                      {String(item.node_id)} · HTTP 请求
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabelWithHint hint="从 JSON 响应中按点号路径提取字段，例如 data.user.id。">
+              JSON 路径（可选）
+            </FieldLabelWithHint>
+            <Input
+              value={String(step.path ?? "")}
+              onChange={(event) => update({ path: event.target.value })}
+              placeholder="data.user.id"
+            />
+          </Field>
+        </FieldGroup>
+      );
+    }
+    const mode = ["whole_text", "first_number", "regex_capture", "metadata"].includes(
+      String(step.mode),
+    )
+      ? (String(step.mode) as ConditionExtract["mode"])
+      : "whole_text";
+    const valueType = ["text", "number", "datetime"].includes(String(step.value_type))
+      ? (String(step.value_type) as ConditionExtract["value_type"])
+      : "text";
+    const extract: ConditionExtract = {
+      name: String(step.name ?? ""),
+      source: mode === "metadata" ? "metadata" : "message_text",
+      mode,
+      value_type: valueType,
+      ...(step.field ? { field: String(step.field) } : {}),
+      ...(step.pattern !== undefined ? { pattern: String(step.pattern) } : {}),
+      ...(step.capture_group !== undefined
+        ? { capture_group: step.capture_group as number | string }
+        : {}),
+      ...(step.regex && typeof step.regex === "object"
+        ? { regex: step.regex as ConditionExtract["regex"] }
+        : {}),
+    };
+    const updateExtract = (next: ConditionExtract) => {
+      const {
+        path: _path,
+        extract_source: _extractSource,
+        mode: _mode,
+        value_type: _valueType,
+        field: _field,
+        pattern: _pattern,
+        capture_group: _captureGroup,
+        regex: _regex,
+        ...rest
+      } = step;
+      onChange({
+        ...rest,
+        source: "wait_message_text",
+        name: next.name,
+        mode: next.mode,
+        value_type: next.value_type,
+        ...(next.field ? { field: next.field } : {}),
+        ...(next.pattern !== undefined ? { pattern: next.pattern } : {}),
+        ...(next.capture_group !== undefined ? { capture_group: next.capture_group } : {}),
+        ...(next.regex ? { regex: next.regex } : {}),
+      });
+    };
+    return (
+      <FieldGroup>
+        {commonFields}
+        <Field>
+          <FieldLabelWithHint hint="选择从前置 HTTP 请求响应，或等待消息内容中提取变量。">
+            提取源类型
+          </FieldLabelWithHint>
+          <Select
+            items={[
+              { value: "http_request", label: "HTTP 请求" },
+              { value: "wait_message", label: "等待消息" },
+            ]}
+            value={sourceType}
+            onValueChange={(value) => value && updateSource(value)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="http_request">HTTP 请求</SelectItem>
+                <SelectItem value="wait_message">等待消息</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field>
+          <FieldLabelWithHint hint="选择实际提供提取数据的前置等待消息节点。">
+            数据源节点
+          </FieldLabelWithHint>
+          <Select
+            items={candidates.map((item) => ({
+              value: String(item.node_id),
+              label: `${String(item.node_id)} · 等待消息`,
+            }))}
+            value={sourceId}
+            onValueChange={(value) => value && update({ source_node_id: value })}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="请选择前置等待消息节点" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {candidates.map((item) => (
+                  <SelectItem key={String(item.node_id)} value={String(item.node_id)}>
+                    {String(item.node_id)} · 等待消息
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        <ExtractionFields
+          extract={extract}
+          index={0}
+          readOnly={false}
+          showName={false}
+          showValueType={false}
+          onChange={updateExtract}
+        />
+      </FieldGroup>
+    );
+  }
+  return null;
 }
 
 export function TaskWorkflowEditor({
@@ -1102,6 +1506,7 @@ export function TaskWorkflowEditor({
       ) : null}
       <StepEditorSheet
         step={selectedIndex === null ? null : (steps[selectedIndex] ?? null)}
+        priorSteps={selectedIndex === null ? [] : steps.slice(0, selectedIndex)}
         index={selectedIndex ?? 0}
         open={selectedIndex !== null && steps[selectedIndex]?.type !== "condition"}
         readOnly={readOnly}
@@ -1171,6 +1576,7 @@ export function StepEditorSheet({
   readOnly = false,
   runStatus,
   runLogs = [],
+  priorSteps = [],
 }: {
   step: WorkflowStep | null;
   index: number;
@@ -1180,21 +1586,34 @@ export function StepEditorSheet({
   readOnly?: boolean;
   runStatus?: TaskStepStatus;
   runLogs?: TaskRunLog[];
+  priorSteps?: WorkflowStep[];
 }) {
   const [draftStep, setDraftStep] = useState<WorkflowStep | null>(step);
+  const [finishError, setFinishError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setDraftStep(step);
+    if (open) {
+      setDraftStep(step);
+      setFinishError(null);
+    }
   }, [open, step]);
 
   const finishEditing = () => {
+    if (!readOnly && draftStep) {
+      const issues = validateStepConfiguration(draftStep, priorSteps);
+      if (issues.length > 0) {
+        setFinishError(issues.join("\n"));
+        return;
+      }
+    }
+    setFinishError(null);
     if (!readOnly && draftStep) onChange(draftStep);
     onOpenChange(false);
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 overflow-hidden sm:max-w-md">
+      <SheetContent side="right" className="w-full gap-0 overflow-hidden sm:max-w-2xl">
         <SheetHeader className="shrink-0 border-b">
           <SheetTitle className="flex items-center gap-1.5">
             {step ? <StepIcon step={step} className="size-4 shrink-0 text-primary" /> : null}
@@ -1210,10 +1629,22 @@ export function StepEditorSheet({
           {readOnly ? (
             <RunStepDetails status={runStatus} logs={runLogs} />
           ) : draftStep ? (
-            <StepFields step={draftStep} onChange={setDraftStep} />
+            <StepFields
+              step={draftStep}
+              onChange={(next) => {
+                setDraftStep(next);
+                setFinishError(null);
+              }}
+              priorSteps={priorSteps}
+            />
           ) : null}
         </div>
         <SheetFooter className="shrink-0 border-t">
+          {finishError ? (
+            <p role="alert" className="mr-auto whitespace-pre-line text-sm text-destructive">
+              {finishError}
+            </p>
+          ) : null}
           <Button type="button" onClick={finishEditing}>
             <CheckCircle2 data-icon="inline-start" />
             {readOnly ? "关闭" : "完成编辑"}

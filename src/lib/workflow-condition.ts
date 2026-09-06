@@ -263,6 +263,16 @@ const VARIABLE_RESERVED_WORDS = new Set([
   "with",
   "yield",
 ]);
+
+export function validateWorkflowVariableName(name: string): string | null {
+  if (!VARIABLE_NAME.test(name) || name.startsWith("__")) {
+    return "变量名须符合 Python/JavaScript 标识符规范：以英文字母或下划线开头，只含英文、数字、下划线，最多 64 个字符，且不能使用 __ 前缀。";
+  }
+  if (VARIABLE_RESERVED_WORDS.has(name)) {
+    return "变量名不能使用 Python/JavaScript 保留关键字。";
+  }
+  return null;
+}
 const LENGTH_OPERATORS = new Set([
   "length_eq",
   "length_ne",
@@ -338,6 +348,18 @@ export function createWorkflowStep(type: string): WorkflowStep {
     return { type, node_id: createNodeId("wait"), timeout_seconds: 60 };
   }
   if (type === "click_button") return { type, node_id: createNodeId("click"), text: "" };
+  if (type === "http_request")
+    return { type, node_id: createNodeId("http"), method: "GET", url: "", headers: "", body: "" };
+  if (type === "extract_variable") {
+    return {
+      type,
+      node_id: createNodeId("extract"),
+      name: "",
+      source: "wait_message_text",
+      mode: "whole_text",
+      value_type: "text",
+    };
+  }
   return { type, node_id: createNodeId("step") };
 }
 
@@ -486,6 +508,8 @@ export function inferWorkflowVariables(
 ): WorkflowVariableDefinition[] {
   const current = variableMap(inherited);
   for (const step of steps) {
+    if (step.type === "extract_variable" && typeof step.name === "string")
+      current.set(step.name, (step.value_type as WorkflowValueType) || "text");
     if (step.type !== "condition") continue;
     const condition = normalizeConditionStep(step);
     for (const extract of condition.extracts) current.set(extract.name, extract.value_type);
@@ -661,15 +685,8 @@ export function validateConditionStep(
   const variables = variableMap(inherited);
   step.extracts.forEach((extract, index) => {
     const path = `extracts.${index}`;
-    if (!VARIABLE_NAME.test(extract.name) || extract.name.startsWith("__")) {
-      add(
-        `${path}.name`,
-        "变量名须符合 Python/JavaScript 标识符规范：以英文字母或下划线开头，只含英文、数字、下划线，最多 64 个字符，且不能使用 __ 前缀。",
-      );
-    }
-    if (VARIABLE_RESERVED_WORDS.has(extract.name)) {
-      add(`${path}.name`, "变量名不能使用 Python/JavaScript 保留关键字。");
-    }
+    const nameIssue = validateWorkflowVariableName(extract.name);
+    if (nameIssue) add(`${path}.name`, nameIssue);
     if (variables.has(extract.name)) add(`${path}.name`, "变量名不能重复。");
     variables.set(extract.name, extract.value_type);
     if (extract.mode === "first_number" && extract.value_type !== "number") {
