@@ -71,6 +71,7 @@ import {
   updateNestedCondition,
   validateConditionStep,
   variablesAtConditionPath,
+  sourcesAtConditionPath,
   type WorkflowStep,
   type WorkflowVariableDefinition,
   waitAtConditionPath,
@@ -202,6 +203,7 @@ export function ConditionWorkspace({
   runLogs,
   runStatus,
   availableVariables = [],
+  availableSources = [],
   hasPriorWait = true,
   onOpenChange,
   onApply,
@@ -214,6 +216,7 @@ export function ConditionWorkspace({
   runLogs?: TaskRunLog[];
   runStatus?: TaskStepStatus;
   availableVariables?: WorkflowVariableDefinition[];
+  availableSources?: WorkflowStep[];
   hasPriorWait?: boolean;
   onOpenChange: (open: boolean) => void;
   onApply: (step: ConditionStep) => void;
@@ -258,8 +261,11 @@ export function ConditionWorkspace({
     [availableVariables, draft, path],
   );
   const issues = useMemo(
-    () => (draft ? validateConditionStep(draft, 1, availableVariables, hasPriorWait) : []),
-    [availableVariables, draft, hasPriorWait],
+    () =>
+      draft
+        ? validateConditionStep(draft, 1, availableVariables, hasPriorWait, availableSources)
+        : [],
+    [availableVariables, availableSources, draft, hasPriorWait],
   );
   const scopedIssues = useMemo(() => scopeConditionIssues(issues, path), [issues, path]);
   const branchIssueCounts = useMemo(
@@ -269,6 +275,10 @@ export function ConditionWorkspace({
   const globalIssueCount = useMemo(
     () => scopedIssues.filter((issue) => !issue.path.startsWith("branches.")).length,
     [scopedIssues],
+  );
+  const currentSources = useMemo(
+    () => (draft ? sourcesAtConditionPath(draft, path, availableSources) : availableSources),
+    [draft, path, availableSources],
   );
   const currentHasWait = useMemo(
     () => (draft ? waitAtConditionPath(draft, path, hasPriorWait) : hasPriorWait),
@@ -697,6 +707,7 @@ export function ConditionWorkspace({
                           runLogs,
                           inheritedVariables: variables,
                           inheritedWait: currentHasWait,
+                          inheritedSources: currentSources,
                           pathPrefix: currentRuntimePath
                             ? `${currentRuntimePath}.branches[${activeBranch}].steps`
                             : undefined,

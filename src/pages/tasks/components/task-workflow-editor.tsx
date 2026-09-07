@@ -67,12 +67,12 @@ import type { TaskRunLog, TaskRunProgress, TaskStepStatus } from "@/lib/api/type
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
-  CONDITION_METADATA_FIELDS,
   type ConditionExtract,
   createWorkflowStep,
   ensureWorkflowNodeIds,
   normalizeConditionStep,
-  validateRegexPattern,
+  validateExtractionStep,
+  workflowSourcesBeforeStep,
   validateWorkflowVariableName,
   variablesBeforeStep,
   type WorkflowStep,
@@ -715,63 +715,7 @@ function validateStepConfiguration(step: WorkflowStep, priorSteps: WorkflowStep[
     }
   }
 
-  if (step.type === "extract_variable") {
-    const nameIssue = validateWorkflowVariableName(String(step.name ?? ""));
-    if (nameIssue) add(nameIssue);
-    if (!["text", "number", "datetime"].includes(String(step.value_type ?? "text"))) {
-      add("请选择有效的变量类型。");
-    }
-
-    const source = String(step.source ?? "");
-    const sourceId = String(step.source_node_id ?? "");
-    if (source === "http_body") {
-      if (!sourceId) {
-        add("请选择提供数据的前置 HTTP 请求节点。");
-      } else if (
-        !priorSteps.some((item) => item.type === "http_request" && item.node_id === sourceId)
-      ) {
-        add("所选 HTTP 请求数据源节点无效，请重新选择。");
-      }
-    } else if (source === "wait_message_text") {
-      if (!sourceId) {
-        add("请选择提供数据的前置等待消息节点。");
-      } else if (
-        !priorSteps.some((item) => item.type === "wait_message" && item.node_id === sourceId)
-      ) {
-        add("所选等待消息数据源节点无效，请重新选择。");
-      }
-      const mode = String(step.mode ?? "whole_text");
-      if (!["whole_text", "first_number", "regex_capture", "metadata"].includes(mode)) {
-        add("请选择有效的提取方式。");
-      }
-      if (mode === "first_number" && step.value_type !== "number") {
-        add("首个数字提取必须保存为数值类型。");
-      }
-      if (
-        mode === "metadata" &&
-        !CONDITION_METADATA_FIELDS.some((item) => item.value === step.field)
-      ) {
-        add("请选择有效的消息元数据字段。");
-      }
-      if (mode === "regex_capture") {
-        const regexIssue = validateRegexPattern(
-          typeof step.pattern === "string" ? step.pattern : "",
-          step.regex && typeof step.regex === "object"
-            ? (step.regex as ConditionExtract["regex"])
-            : undefined,
-        );
-        if (regexIssue) add(regexIssue);
-        if (
-          step.capture_group === "" ||
-          (typeof step.capture_group === "number" && step.capture_group < 0)
-        ) {
-          add("捕获组必须是非负编号或非空名称。");
-        }
-      }
-    } else {
-      add("请选择有效的提取源类型。");
-    }
-  }
+  issues.push(...validateExtractionStep(step, priorSteps));
 
   return issues;
 }
@@ -1006,6 +950,12 @@ function StepFields({
         source: value === "wait_message" ? "wait_message_text" : "http_body",
         source_node_id: "",
         path: "",
+        mode: "whole_text",
+        field: undefined,
+        pattern: undefined,
+        capture_group: undefined,
+        regex: undefined,
+        extract_source: undefined,
       });
     const nameError = validateWorkflowVariableName(String(step.name ?? ""));
     const commonFields = (
@@ -1234,6 +1184,7 @@ export function TaskWorkflowEditor({
   onConditionSelect,
   inheritedVariables = [],
   inheritedWait = false,
+  inheritedSources = [],
   pathPrefix,
 }: {
   steps: WorkflowStep[];
@@ -1244,6 +1195,7 @@ export function TaskWorkflowEditor({
   onConditionSelect?: (stepIndex: number) => void;
   inheritedVariables?: WorkflowVariableDefinition[];
   inheritedWait?: boolean;
+  inheritedSources?: WorkflowStep[];
   pathPrefix?: string;
 }) {
   const isMobile = useIsMobile();
@@ -1316,6 +1268,10 @@ export function TaskWorkflowEditor({
         ? inheritedVariables
         : variablesBeforeStep(steps, selectedIndex, inheritedVariables),
     [inheritedVariables, selectedIndex, steps],
+  );
+  const selectedSources = useMemo(
+    () => workflowSourcesBeforeStep(steps, selectedIndex ?? 0, inheritedSources),
+    [steps, selectedIndex, inheritedSources],
   );
   const selectedHasWait = useMemo(
     () =>
@@ -1506,7 +1462,7 @@ export function TaskWorkflowEditor({
       ) : null}
       <StepEditorSheet
         step={selectedIndex === null ? null : (steps[selectedIndex] ?? null)}
-        priorSteps={selectedIndex === null ? [] : steps.slice(0, selectedIndex)}
+        priorSteps={selectedSources}
         index={selectedIndex ?? 0}
         open={selectedIndex !== null && steps[selectedIndex]?.type !== "condition"}
         readOnly={readOnly}
@@ -1535,6 +1491,7 @@ export function TaskWorkflowEditor({
         run={run}
         runLogs={runLogs}
         availableVariables={selectedVariables}
+        availableSources={selectedSources}
         hasPriorWait={selectedHasWait}
         runStatus={
           selectedIndex === null || !steps[selectedIndex]
@@ -1559,6 +1516,7 @@ export function TaskWorkflowEditor({
             onConditionSelect={props.onConditionSelect}
             inheritedVariables={props.inheritedVariables}
             inheritedWait={props.inheritedWait}
+            inheritedSources={props.inheritedSources}
             pathPrefix={props.pathPrefix}
           />
         )}

@@ -502,6 +502,109 @@ function variableDefinitions(values: Map<string, WorkflowValueType>): WorkflowVa
   return [...values].map(([name, valueType]) => ({ name, valueType }));
 }
 
+/** Data sources guaranteed to have run before this position (never sibling branches). */
+export function workflowSourcesBeforeStep(
+  steps: WorkflowStep[],
+  index: number,
+  inherited: WorkflowStep[] = [],
+): WorkflowStep[] {
+  return [...inherited, ...steps.slice(0, index)].filter(
+    (step) => step.type === "http_request" || step.type === "wait_message",
+  );
+}
+
+export function sourcesAtConditionPath(
+  root: ConditionStep,
+  path: ConditionPathSegment[],
+  inherited: WorkflowStep[] = [],
+): WorkflowStep[] {
+  let current = root;
+  let sources = inherited;
+  for (const segment of path) {
+    const branch = current.branches[segment.branchIndex];
+    if (!branch) break;
+    sources = workflowSourcesBeforeStep(branch.steps, segment.stepIndex, sources);
+    const nested = branch.steps[segment.stepIndex];
+    if (nested?.type !== "condition") break;
+    current = normalizeConditionStep(nested);
+  }
+  return sources;
+}
+
+export function validateExtractionStep(
+  step: WorkflowStep,
+  priorSteps: WorkflowStep[],
+  inherited: WorkflowVariableDefinition[] = [],
+): string[] {
+  const issues: string[] = [];
+  const add = (message: string) => issues.push(message);
+  if (step.type === "extract_variable") {
+    if (inherited.some((item) => item.name === step.name)) add("变量名不能重复。");
+    const nameIssue = validateWorkflowVariableName(String(step.name ?? ""));
+    if (nameIssue) add(nameIssue);
+    if (!["text", "number", "datetime"].includes(String(step.value_type ?? "text"))) {
+      add("请选择有效的变量类型。");
+    }
+
+    const source = String(step.source ?? "");
+    const sourceId = String(step.source_node_id ?? "");
+    if (["http_body", "http_status", "http_headers"].includes(source)) {
+      if (!sourceId) {
+        add("请选择提供数据的前置 HTTP 请求节点。");
+      } else if (
+        !priorSteps.some((item) => item.type === "http_request" && item.node_id === sourceId)
+      ) {
+        add("所选 HTTP 请求数据源节点无效，请重新选择。");
+      }
+    } else if (source === "wait_message_text") {
+      if (!sourceId) {
+        add("请选择提供数据的前置等待消息节点。");
+      } else if (
+        !priorSteps.some((item) => item.type === "wait_message" && item.node_id === sourceId)
+      ) {
+        add("所选等待消息数据源节点无效，请重新选择。");
+      }
+      const mode = String(step.mode ?? "whole_text");
+      if (!["whole_text", "first_number", "regex_capture", "metadata"].includes(mode)) {
+        add("请选择有效的提取方式。");
+      }
+      if (mode === "first_number" && step.value_type !== "number") {
+        add("首个数字提取必须保存为数值类型。");
+      }
+      if (
+        mode === "metadata" &&
+        !CONDITION_METADATA_FIELDS.some((item) => item.value === step.field)
+      ) {
+        add("请选择有效的消息元数据字段。");
+      }
+      if (mode === "regex_capture") {
+        const regexIssue = validateRegexPattern(
+          typeof step.pattern === "string" ? step.pattern : "",
+          step.regex && typeof step.regex === "object"
+            ? (step.regex as ConditionExtract["regex"])
+            : undefined,
+        );
+        if (regexIssue) add(regexIssue);
+        if (
+          step.capture_group !== undefined &&
+          !(
+            (typeof step.capture_group === "number" &&
+              Number.isInteger(step.capture_group) &&
+              step.capture_group >= 0) ||
+            (typeof step.capture_group === "string" && step.capture_group.length > 0)
+          )
+        ) {
+          add("捕获组必须是非负编号或非空名称。");
+        }
+      }
+    } else {
+      add("请选择有效的提取源类型。");
+    }
+  }
+
+  return issues;
+}
+
 export function inferWorkflowVariables(
   steps: WorkflowStep[],
   inherited: WorkflowVariableDefinition[] = [],
@@ -672,6 +775,7 @@ export function validateConditionStep(
   depth = 1,
   inherited: WorkflowVariableDefinition[] = [],
   hasPriorWait = true,
+  priorSources: WorkflowStep[] = [],
 ): ConditionValidationIssue[] {
   const issues: ConditionValidationIssue[] = [];
   const add = (path: string, message: string) => issues.push({ path, message });
@@ -755,15 +859,20 @@ export function validateConditionStep(
     let branchVariables = variableDefinitions(variables);
     let branchHasWait = hasPriorWait;
     branch.steps.forEach((nested, stepIndex) => {
+      const sources = workflowSourcesBeforeStep(branch.steps, stepIndex, priorSources);
       if (nested.type === "condition") {
         for (const issue of validateConditionStep(
           normalizeConditionStep(nested),
           depth + 1,
           branchVariables,
           branchHasWait,
+          sources,
         )) {
           add(`${path}.steps.${stepIndex}.${issue.path}`, issue.message);
         }
+      }
+      for (const message of validateExtractionStep(nested, sources, branchVariables)) {
+        add(`${path}.steps.${stepIndex}`, message);
       }
       branchVariables = inferWorkflowVariables([nested], branchVariables);
       branchHasWait = workflowHasWait([nested], branchHasWait);
@@ -773,30 +882,35 @@ export function validateConditionStep(
 }
 
 /**
- * Validate every condition node in a workflow, including top-level nodes.
+ * Validate conditions and standalone extractions throughout a workflow.
  *
  * The condition workspace validates its currently open node. This companion
  * helper covers the whole definition so YAML mode and direct form submission
- * cannot bypass the same regex checks.
+ * cannot bypass regex, variable declaration, or data-source checks.
  */
 export function validateWorkflowConditions(
   steps: WorkflowStep[],
   inheritedVariables: WorkflowVariableDefinition[] = [],
   inheritedWait = false,
+  inheritedSources: WorkflowStep[] = [],
 ): ConditionValidationIssue[] {
   const issues: ConditionValidationIssue[] = [];
   let variables = inheritedVariables;
   let hasWait = inheritedWait;
 
   steps.forEach((step, index) => {
+    const sources = workflowSourcesBeforeStep(steps, index, inheritedSources);
     if (step.type === "condition") {
       const condition = normalizeConditionStep(step);
-      for (const issue of validateConditionStep(condition, 1, variables, hasWait)) {
+      for (const issue of validateConditionStep(condition, 1, variables, hasWait, sources)) {
         issues.push({ ...issue, path: `steps.${index}.${issue.path}` });
       }
       variables = inferWorkflowVariables([condition], variables);
       hasWait = workflowHasWait([condition], hasWait);
       return;
+    }
+    for (const message of validateExtractionStep(step, sources, variables)) {
+      issues.push({ path: `steps.${index}`, message });
     }
     variables = inferWorkflowVariables([step], variables);
     hasWait = workflowHasWait([step], hasWait);
