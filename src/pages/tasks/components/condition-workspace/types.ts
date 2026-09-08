@@ -22,6 +22,7 @@ export type BranchSequenceRenderer = (props: {
   runLogs?: TaskRunLog[];
   inheritedVariables: WorkflowVariableDefinition[];
   inheritedWait: boolean;
+  inheritedSources: WorkflowStep[];
   pathPrefix?: string;
 }) => ReactNode;
 
