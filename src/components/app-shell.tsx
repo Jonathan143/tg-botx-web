@@ -5,6 +5,7 @@ import {
   ClipboardListIcon,
   FileTextIcon,
   LayoutDashboardIcon,
+  LibraryBigIcon,
   LogOutIcon,
   MoonIcon,
   SettingsIcon,
@@ -44,6 +45,7 @@ import { toast } from "@/components/ui/toast";
 const navigation = [
   { path: "/", label: "仪表盘", icon: LayoutDashboardIcon },
   { path: "/tasks", label: "任务", icon: ClipboardListIcon },
+  { path: "/message-library", label: "消息库", icon: LibraryBigIcon },
   { path: "/runs", label: "执行记录", icon: ActivityIcon },
   { path: "/accounts", label: "Telegram 账号", icon: BotIcon },
   { path: "/admin-bot", label: "Telegram 管理 Bot", icon: ShieldCheckIcon },

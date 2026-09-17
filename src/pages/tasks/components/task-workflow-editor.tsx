@@ -66,6 +66,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import type { TaskRunLog, TaskRunProgress, TaskStepStatus } from "@/lib/api/types";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { messageStepSummary, validateSendMessageStep } from "@/lib/message-library";
+import { SendMessageFields } from "./send-message-fields";
 import {
   type ConditionExtract,
   createWorkflowStep,
@@ -159,8 +161,7 @@ const stepLabel = (step: WorkflowStep) =>
   `未知步骤（${step.type ?? "未指定"}）`;
 
 const stepSummary = (step: WorkflowStep) => {
-  if (step.type === "send_message")
-    return typeof step.text === "string" && step.text ? step.text : "待填写消息文本";
+  if (step.type === "send_message") return messageStepSummary(step);
   if (step.type === "wait_message") {
     const matcher = step.success;
     return matcher
@@ -300,7 +301,7 @@ function BotResponsePreview({
 }
 
 function WorkflowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
-  const invalid = data.step.type === "send_message" && typeof data.step.text !== "string";
+  const invalid = validateSendMessageStep(data.step).length > 0;
   const durationLabel = formatStepDuration(data.durationMs);
   return (
     <div
@@ -669,9 +670,7 @@ function validateStepConfiguration(step: WorkflowStep, priorSteps: WorkflowStep[
   const issues: string[] = [];
   const add = (message: string) => issues.push(message);
 
-  if (step.type === "send_message" && (typeof step.text !== "string" || !step.text.trim())) {
-    add("请输入消息文本。");
-  }
+  issues.push(...validateSendMessageStep(step));
 
   if (step.type === "wait_message") {
     if (!readMatcher(step.success).values.some((value) => value.trim())) {
@@ -731,18 +730,7 @@ function StepFields({
 }) {
   const update = (patch: WorkflowStep) => onChange({ ...step, ...patch });
   if (step.type === "send_message") {
-    return (
-      <Field>
-        <FieldLabel htmlFor="step-text">消息文本</FieldLabel>
-        <Textarea
-          id="step-text"
-          value={typeof step.text === "string" ? step.text : ""}
-          onChange={(event) => update({ text: event.target.value })}
-          placeholder="输入要发送的消息"
-        />
-        <FieldDescription>支持 Telegram 文本消息。</FieldDescription>
-      </Field>
-    );
+    return <SendMessageFields key={step.node_id} step={step} onChange={onChange} />;
   }
   if (step.type === "wait_message") {
     return (

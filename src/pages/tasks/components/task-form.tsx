@@ -37,6 +37,8 @@ import type {
   TaskRunProgress,
 } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
+import { messageStepSummary } from "@/lib/message-library";
+import { maxExecutions, validateScheduleExecution } from "../schedule-validation";
 import {
   createWorkflowStep,
   normalizeConditionStep,
@@ -53,6 +55,7 @@ const defaultDefinition: TaskDefinition = {
     type: "fixed",
     timezone: "Asia/Shanghai",
     frequency: "daily",
+    execution_count: 1,
     start_date: new Date().toISOString().slice(0, 10),
     time: "08:00",
   },
@@ -244,6 +247,9 @@ export function TaskForm({
       try {
         const parsed = parse(yamlText) as TaskDefinition;
         if (!parsed || typeof parsed !== "object") throw new Error("YAML 必须是对象。");
+        const scheduleIssue = validateScheduleExecution(parsed.schedule);
+        if (scheduleIssue) throw new Error(scheduleIssue);
+        if (!Array.isArray(parsed.steps)) throw new Error("steps 必须是数组。");
         setDefinition(parsed);
         setYamlText(stringify(parsed));
         setError(null);
@@ -272,6 +278,9 @@ export function TaskForm({
     if (!Array.isArray(next.steps) || next.steps.length === 0) {
       throw new Error("至少需要配置一个执行步骤。");
     }
+    const scheduleIssue = validateScheduleExecution(next.schedule);
+    if (scheduleIssue) throw new Error(scheduleIssue);
+    next.schedule = { ...next.schedule, execution_count: next.schedule.execution_count ?? 1 };
     const conditionIssues = validateWorkflowConditions(next.steps);
     if (conditionIssues.length > 0) {
       throw new Error(conditionIssues.map((issue) => `${issue.path}：${issue.message}`).join("\n"));
@@ -353,7 +362,10 @@ export function TaskForm({
   const previewSchedule = async () => {
     setIsPreviewing(true);
     setPreviewError(null);
+    setPreview(null);
     try {
+      const issue = validateScheduleExecution(definition.schedule);
+      if (issue) throw new Error(issue);
       const result = await apiRequest<SchedulePreview>(
         taskId ? `/api/tasks/${taskId}/preview` : "/api/tasks/preview",
         { method: "POST", body: jsonBody({ definition }) },
@@ -509,7 +521,12 @@ export function TaskForm({
                       values[0] &&
                       updateDefinition({
                         ...definition,
-                        schedule: { ...definition.schedule, type: values[0] as "fixed" | "random" },
+                        schedule: {
+                          ...definition.schedule,
+                          type: values[0] as "fixed" | "random",
+                          execution_count:
+                            values[0] === "fixed" ? 1 : (definition.schedule.execution_count ?? 1),
+                        },
                       })
                     }
                   >
@@ -635,6 +652,37 @@ export function TaskForm({
                         </SelectGroup>
                       </SelectContent>
                     </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="execution-count">执行次数</FieldLabel>
+                    <Input
+                      id="execution-count"
+                      type="number"
+                      min={1}
+                      max={maxExecutions(definition.schedule)}
+                      step={1}
+                      required
+                      disabled={definition.schedule.type === "fixed"}
+                      value={
+                        definition.schedule.type === "fixed"
+                          ? 1
+                          : (definition.schedule.execution_count ?? 1)
+                      }
+                      onChange={(event) =>
+                        updateDefinition({
+                          ...definition,
+                          schedule: {
+                            ...definition.schedule,
+                            execution_count: Number(event.target.value),
+                          },
+                        })
+                      }
+                    />
+                    <FieldDescription>
+                      {definition.schedule.type === "fixed"
+                        ? "固定时间每个执行日只能执行 1 次。"
+                        : "每个符合频率的日期执行此次数；随机时间互不重复、严格递增且在窗口内。"}
+                    </FieldDescription>
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="start-date">开始日期</FieldLabel>
@@ -884,7 +932,7 @@ export function TaskForm({
                             <p className="font-medium">{String(step.type ?? "未知步骤")}</p>
                             <p className="text-sm text-muted-foreground">
                               {step.type === "send_message"
-                                ? String(step.text || "待填写消息文本")
+                                ? messageStepSummary(step)
                                 : step.type === "wait_message"
                                   ? "等待匹配消息或超时"
                                   : step.type === "click_button"

@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 const UnlockPage = lazy(() => import("@/pages/unlock"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const TasksPage = lazy(() => import("@/pages/tasks"));
+const MessageLibraryPage = lazy(() => import("@/pages/message-library"));
 const NewTaskPage = lazy(() => import("@/pages/tasks/new"));
 const TaskDetailPage = lazy(() => import("@/pages/tasks/detail"));
 const RunsPage = lazy(() => import("@/pages/runs"));
@@ -48,6 +49,7 @@ export function App() {
         <Route element={<ProtectedLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="tasks" element={<TasksPage />} />
+          <Route path="message-library" element={<MessageLibraryPage />} />
           <Route path="tasks/new" element={<NewTaskPage />} />
           <Route path="tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="runs" element={<RunsPage />} />
