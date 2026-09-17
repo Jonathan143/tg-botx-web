@@ -1,0 +1,490 @@
+diff --git a/src/pages/message-library/components/group-editor-dialog.tsx b/src/pages/message-library/components/group-editor-dialog.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/pages/message-library/components/group-editor-dialog.tsx
+@@ -0,0 +1,240 @@
++import { useCallback, useEffect, useId, useRef, useState } from "react";
++
++import { MessageListEditor } from "@/components/message-list-editor";
++import { Alert, AlertDescription } from "@/components/ui/alert";
++import {
++  AlertDialog,
++  AlertDialogAction,
++  AlertDialogCancel,
++  AlertDialogContent,
++  AlertDialogDescription,
++  AlertDialogFooter,
++  AlertDialogHeader,
++  AlertDialogTitle,
++} from "@/components/ui/alert-dialog";
++import { Button } from "@/components/ui/button";
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle,
++} from "@/components/ui/dialog";
++import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
++import { Input } from "@/components/ui/input";
++import { Spinner } from "@/components/ui/spinner";
++import { ApiError } from "@/lib/api/client";
++import { messageLibraryApi } from "@/lib/api/message-library";
++import { validateMessageList } from "@/lib/message-library";
++
++export function GroupEditorDialog({
++  groupId,
++  onClose,
++  onSaved,
++}: {
++  groupId: string | null;
++  onClose: () => void;
++  onSaved: () => Promise<void>;
++}) {
++  const id = useId();
++  const [name, setName] = useState("");
++  const [messages, setMessages] = useState<string[]>([]);
++  const [revision, setRevision] = useState<number | null>(null);
++  const [baseline, setBaseline] = useState(JSON.stringify({ name: "", messages: [] }));
++  const [isLoading, setIsLoading] = useState(Boolean(groupId));
++  const [isSaving, setIsSaving] = useState(false);
++  const [loadError, setLoadError] = useState<string | null>(null);
++  const [saveError, setSaveError] = useState<string | null>(null);
++  const [isConflict, setIsConflict] = useState(false);
++  const [confirmation, setConfirmation] = useState<"close" | "reload" | null>(null);
++  const request = useRef<AbortController | null>(null);
++  const isDirty = JSON.stringify({ name, messages }) !== baseline;
++  const load = useCallback(async () => {
++    if (!groupId) return;
++    request.current?.abort();
++    const controller = new AbortController();
++    request.current = controller;
++    setIsLoading(true);
++    setLoadError(null);
++    try {
++      // Read exactly once per open/reload. Background list refreshes never replace a draft.
++      const group = await messageLibraryApi.get(groupId, controller.signal);
++      if (controller.signal.aborted) return;
++      setName(group.name);
++      setMessages(group.messages);
++      setRevision(group.revision);
++      setBaseline(JSON.stringify({ name: group.name, messages: group.messages }));
++      setSaveError(null);
++      setIsConflict(false);
++    } catch (error) {
++      if (!controller.signal.aborted)
++        setLoadError(error instanceof Error ? error.message : "分组加载失败。");
++    } finally {
++      if (!controller.signal.aborted) setIsLoading(false);
++    }
++  }, [groupId]);
++  useEffect(() => {
++    void load();
++    return () => request.current?.abort();
++  }, [load]);
++  const close = () => {
++    if (isSaving) return;
++    if (isDirty) setConfirmation("close");
++    else onClose();
++  };
++  const save = async (event: React.FormEvent) => {
++    event.preventDefault();
++    if (isSaving || isLoading || loadError) return;
++    setSaveError(null);
++    const trimmedName = name.trim();
++    const issues = validateMessageList(messages, true);
++    if (!trimmedName || trimmedName.length > 100) {
++      setSaveError("分组名称必须为 1–100 个字符。");
++      return;
++    }
++    if (issues.length) {
++      setSaveError(issues.slice(0, 10).join("\n"));
++      return;
++    }
++    if (groupId && revision === null) {
++      setSaveError("请先重新载入分组。");
++      return;
++    }
++    setIsSaving(true);
++    try {
++      const input = { name: trimmedName, messages };
++      if (groupId && revision !== null) await messageLibraryApi.update(groupId, input, revision);
++      else await messageLibraryApi.create(input);
++      await onSaved();
++      onClose();
++    } catch (error) {
++      setSaveError(error instanceof Error ? error.message : "保存失败，请重试。");
++      setIsConflict(error instanceof ApiError && error.status === 409);
++    } finally {
++      setIsSaving(false);
++    }
++  };
++  return (
++    <>
++      <Dialog
++        open
++        onOpenChange={(open) => {
++          if (!open) close();
++        }}
++      >
++        <DialogContent
++          className="flex max-h-[90dvh] flex-col sm:max-w-3xl"
++          showCloseButton={!isSaving}
++        >
++          <DialogHeader>
++            <DialogTitle>{groupId ? "管理消息分组" : "新建消息分组"}</DialogTitle>
++            <DialogDescription>
++              每组最多 1000
++              条。保存后，实时引用此分组的任务会在后续发送时使用新内容；已导入的独立快照不变。
++            </DialogDescription>
++          </DialogHeader>
++          <form
++            className="flex min-h-0 flex-1 flex-col gap-4"
++            onSubmit={(event) => void save(event)}
++          >
++            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1 pb-2">
++              {isLoading ? (
++                <p className="flex items-center gap-2 p-4 text-sm" role="status">
++                  <Spinner />
++                  正在加载消息…
++                </p>
++              ) : loadError ? (
++                <Alert variant="destructive">
++                  <AlertDescription>
++                    {loadError}
++                    <Button type="button" size="sm" variant="outline" onClick={() => void load()}>
++                      重试
++                    </Button>
++                  </AlertDescription>
++                </Alert>
++              ) : (
++                <FieldGroup>
++                  <Field>
++                    <FieldLabel htmlFor={`${id}-name`}>分组名称</FieldLabel>
++                    <Input
++                      id={`${id}-name`}
++                      value={name}
++                      maxLength={100}
++                      disabled={isSaving}
++                      onChange={(event) => setName(event.target.value)}
++                      placeholder="例如：每日问候、签到指令"
++                    />
++                    <FieldDescription>
++                      名称不可重复。空分组可以保存，但不能用于随机发送。
++                    </FieldDescription>
++                  </Field>
++                  <MessageListEditor value={messages} onChange={setMessages} disabled={isSaving} />
++                </FieldGroup>
++              )}
++              {saveError ? (
++                <Alert variant="destructive">
++                  <AlertDescription className="whitespace-pre-wrap" role="alert">
++                    {saveError}
++                  </AlertDescription>
++                </Alert>
++              ) : null}
++              {isConflict && groupId ? (
++                <div className="flex items-center gap-2">
++                  <Button
++                    type="button"
++                    variant="outline"
++                    disabled={isSaving}
++                    onClick={() => setConfirmation("reload")}
++                  >
++                    重新载入分组
++                  </Button>
++                  <p className="text-xs text-muted-foreground">会放弃当前草稿，读取最新版本。</p>
++                </div>
++              ) : null}
++            </div>
++            <DialogFooter>
++              <Button type="button" variant="outline" disabled={isSaving} onClick={close}>
++                取消
++              </Button>
++              <Button type="submit" disabled={isSaving || isLoading || Boolean(loadError)}>
++                {isSaving ? <Spinner /> : null}保存分组
++              </Button>
++            </DialogFooter>
++          </form>
++        </DialogContent>
++      </Dialog>
++      <AlertDialog
++        open={confirmation !== null}
++        onOpenChange={(open) => {
++          if (!open) setConfirmation(null);
++        }}
++      >
++        <AlertDialogContent>
++          <AlertDialogHeader>
++            <AlertDialogTitle>放弃当前未保存的修改？</AlertDialogTitle>
++            <AlertDialogDescription>
++              {confirmation === "reload"
++                ? "重新载入会用服务器最新版本替换当前草稿。"
++                : "关闭后，当前未保存的修改将丢失。"}
++            </AlertDialogDescription>
++          </AlertDialogHeader>
++          <AlertDialogFooter>
++            <AlertDialogCancel>继续编辑</AlertDialogCancel>
++            <AlertDialogAction
++              variant="destructive"
++              onClick={() => {
++                const action = confirmation;
++                setConfirmation(null);
++                if (action === "reload") void load();
++                else onClose();
++              }}
++            >
++              放弃修改
++            </AlertDialogAction>
++          </AlertDialogFooter>
++        </AlertDialogContent>
++      </AlertDialog>
++    </>
++  );
++}
+diff --git a/src/pages/message-library/components/group-list.tsx b/src/pages/message-library/components/group-list.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/pages/message-library/components/group-list.tsx
+@@ -0,0 +1,137 @@
++import { FolderIcon, PencilIcon, SearchIcon, Trash2Icon } from "lucide-react";
++import { useState } from "react";
++
++import { ConfirmAction } from "@/components/confirm-action";
++import { DataPagination } from "@/components/data-pagination";
++import { EmptyState } from "@/components/resource-state";
++import { Badge } from "@/components/ui/badge";
++import { Button } from "@/components/ui/button";
++import { Input } from "@/components/ui/input";
++import {
++  Table,
++  TableBody,
++  TableCell,
++  TableHead,
++  TableHeader,
++  TableRow,
++} from "@/components/ui/table";
++import { formatDateTime } from "@/lib/format";
++import type { MessageGroupSummary } from "@/lib/message-library";
++
++export function GroupList({
++  groups,
++  onEdit,
++  onDelete,
++  isDeleting,
++}: {
++  groups: MessageGroupSummary[];
++  onEdit: (group: MessageGroupSummary) => void;
++  onDelete: (group: MessageGroupSummary) => Promise<void>;
++  isDeleting: boolean;
++}) {
++  const [search, setSearch] = useState("");
++  const [page, setPage] = useState(1);
++  const filtered = groups.filter((group) =>
++    group.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
++  );
++  const visiblePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 25)));
++  return (
++    <section className="space-y-4" aria-label="消息分组">
++      <div className="flex flex-wrap items-center justify-between gap-3">
++        <div className="relative w-full sm:max-w-sm">
++          <SearchIcon className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
++          <Input
++            className="pl-9"
++            value={search}
++            placeholder="搜索分组名称"
++            aria-label="搜索消息分组"
++            onChange={(event) => {
++              setSearch(event.target.value);
++              setPage(1);
++            }}
++          />
++        </div>
++        <p className="text-sm text-muted-foreground">
++          {groups.length} 个分组 · {groups.reduce((total, group) => total + group.messageCount, 0)}{" "}
++          条消息
++        </p>
++      </div>
++      {!groups.length ? (
++        <EmptyState
++          title="还没有消息分组"
++          description="新建一个分组，添加消息后即可用于任务中的随机发送。"
++        />
++      ) : !filtered.length ? (
++        <EmptyState title="没有匹配的分组" description="尝试更换搜索关键词。" />
++      ) : (
++        <div className="rounded-xl border bg-card">
++          <Table>
++            <TableHeader>
++              <TableRow>
++                <TableHead>分组名称</TableHead>
++                <TableHead>消息数量</TableHead>
++                <TableHead>最近更新</TableHead>
++                <TableHead className="text-right">操作</TableHead>
++              </TableRow>
++            </TableHeader>
++            <TableBody>
++              {filtered.slice((visiblePage - 1) * 25, visiblePage * 25).map((group) => (
++                <TableRow key={group.id}>
++                  <TableCell>
++                    <Button
++                      type="button"
++                      variant="ghost"
++                      className="max-w-80 justify-start"
++                      onClick={() => onEdit(group)}
++                    >
++                      <FolderIcon className="size-4 shrink-0" />
++                      <span className="truncate">{group.name}</span>
++                    </Button>
++                  </TableCell>
++                  <TableCell>
++                    <Badge variant={group.messageCount ? "secondary" : "outline"}>
++                      {group.messageCount} 条
++                    </Badge>
++                  </TableCell>
++                  <TableCell className="text-muted-foreground">
++                    {formatDateTime(group.updatedAt)}
++                  </TableCell>
++                  <TableCell>
++                    <div className="flex justify-end gap-2">
++                      <Button
++                        type="button"
++                        variant="outline"
++                        size="sm"
++                        onClick={() => onEdit(group)}
++                      >
++                        <PencilIcon className="size-4" />
++                        管理消息
++                      </Button>
++                      <ConfirmAction
++                        title={`删除“${group.name}”？`}
++                        description="将删除分组及其中所有消息。已导入任务的独立快照不受影响；仍被任务实时引用的分组无法删除。"
++                        actionLabel="确认删除"
++                        triggerLabel="删除"
++                        triggerContent={<Trash2Icon className="size-4" />}
++                        triggerAriaLabel={`删除分组 ${group.name}`}
++                        triggerDisabled={isDeleting}
++                        variant="destructive"
++                        onConfirm={() => onDelete(group)}
++                      />
++                    </div>
++                  </TableCell>
++                </TableRow>
++              ))}
++            </TableBody>
++          </Table>
++        </div>
++      )}
++      <DataPagination
++        page={visiblePage}
++        pageSize={25}
++        total={filtered.length}
++        onPageChange={setPage}
++      />
++    </section>
++  );
++}
+diff --git a/src/pages/message-library/index.tsx b/src/pages/message-library/index.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/pages/message-library/index.tsx
+@@ -0,0 +1,98 @@
++import { useQuery, useQueryClient } from "@tanstack/react-query";
++import { PlusIcon, RefreshCwIcon } from "lucide-react";
++import { useState } from "react";
++
++import { PageHeader } from "@/components/page-header";
++import { ErrorState, PageSkeleton } from "@/components/resource-state";
++import { Alert, AlertDescription } from "@/components/ui/alert";
++import { Button } from "@/components/ui/button";
++import { toast } from "@/components/ui/toast";
++import { messageLibraryApi, messageLibraryKey } from "@/lib/api/message-library";
++import type { MessageGroupSummary } from "@/lib/message-library";
++import { GroupEditorDialog } from "./components/group-editor-dialog";
++import { GroupList } from "./components/group-list";
++
++export default function MessageLibraryPage() {
++  const queryClient = useQueryClient();
++  const [editing, setEditing] = useState<{ id: string | null } | null>(null);
++  const [isDeleting, setIsDeleting] = useState(false);
++  const query = useQuery({
++    queryKey: [...messageLibraryKey, "groups"],
++    queryFn: ({ signal }) => messageLibraryApi.list(signal),
++    staleTime: 0,
++  });
++  const refresh = async () => {
++    await queryClient.invalidateQueries({ queryKey: messageLibraryKey });
++  };
++  const remove = async (group: MessageGroupSummary) => {
++    setIsDeleting(true);
++    try {
++      await messageLibraryApi.delete(group.id, group.revision);
++      await refresh();
++      toast.add({ type: "success", title: "分组已删除" });
++    } catch (error) {
++      toast.add({
++        type: "error",
++        title: "删除失败",
++        description: error instanceof Error ? error.message : "请刷新后重试。",
++      });
++      await refresh();
++    } finally {
++      setIsDeleting(false);
++    }
++  };
++  return (
++    <>
++      <PageHeader
++        title="消息库"
++        description="按分组管理随机消息，在任务中选择一次性导入或实时引用。"
++        actions={
++          <>
++            <Button
++              type="button"
++              variant="outline"
++              disabled={query.isFetching}
++              onClick={() => void query.refetch()}
++            >
++              <RefreshCwIcon className="size-4" />
++              刷新
++            </Button>
++            <Button type="button" onClick={() => setEditing({ id: null })}>
++              <PlusIcon className="size-4" />
++              新建分组
++            </Button>
++          </>
++        }
++      />
++      {query.isPending ? (
++        <PageSkeleton />
++      ) : query.isError && !query.data ? (
++        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
++      ) : null}
++      {query.isError && query.data ? (
++        <Alert variant="destructive">
++          <AlertDescription>刷新失败，当前显示缓存数据：{query.error.message}</AlertDescription>
++        </Alert>
++      ) : null}
++      {query.data ? (
++        <GroupList
++          groups={query.data.items}
++          onEdit={(group) => setEditing({ id: group.id })}
++          onDelete={remove}
++          isDeleting={isDeleting}
++        />
++      ) : null}
++      {editing ? (
++        <GroupEditorDialog
++          key={editing.id ?? "new"}
++          groupId={editing.id}
++          onClose={() => setEditing(null)}
++          onSaved={async () => {
++            await refresh();
++            toast.add({ type: "success", title: "消息分组已保存" });
++          }}
++        />
++      ) : null}
++    </>
++  );
++}
