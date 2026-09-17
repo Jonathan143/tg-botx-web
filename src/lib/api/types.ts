@@ -37,6 +37,7 @@ export type ScheduleDefinition = {
   type: "fixed" | "random";
   timezone: string;
   frequency?: "daily" | "every_n_days" | "weekly" | "monthly_dates";
+  execution_count?: number;
   start_date?: string | null;
   end_date?: string | null;
   interval_days?: number | null;

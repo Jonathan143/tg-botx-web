@@ -1,3 +1,5 @@
+import { validateSendMessageStep } from "@/lib/message-library";
+
 export type WorkflowValueType = "text" | "number" | "datetime";
 
 export type WorkflowStep = Record<string, unknown> & {
@@ -871,6 +873,12 @@ export function validateConditionStep(
           add(`${path}.steps.${stepIndex}.${issue.path}`, issue.message);
         }
       }
+      for (const message of validateSendMessageStep(
+        nested,
+        new Set(branchVariables.map((item) => item.name)),
+      )) {
+        add(`${path}.steps.${stepIndex}`, message);
+      }
       for (const message of validateExtractionStep(nested, sources, branchVariables)) {
         add(`${path}.steps.${stepIndex}`, message);
       }
@@ -908,6 +916,12 @@ export function validateWorkflowConditions(
       variables = inferWorkflowVariables([condition], variables);
       hasWait = workflowHasWait([condition], hasWait);
       return;
+    }
+    for (const message of validateSendMessageStep(
+      step,
+      new Set(variables.map((item) => item.name)),
+    )) {
+      issues.push({ path: `steps.${index}`, message });
     }
     for (const message of validateExtractionStep(step, sources, variables)) {
       issues.push({ path: `steps.${index}`, message });
